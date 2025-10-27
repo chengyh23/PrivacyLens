@@ -5,10 +5,12 @@ from langchain.base_language import BaseLanguageModel
 from langchain.callbacks.manager import (
     CallbackManagerForLLMRun,
 )
-from langchain.chat_models import AzureChatOpenAI as LangchainAzureChatOpenAI
-from langchain.chat_models import ChatAnthropic as LangchainChatAnthropic
-from langchain.chat_models import ChatOpenAI as LangchainChatOpenAI
-from langchain.chat_models.openai import convert_dict_to_message
+from langchain_community.chat_models import AzureChatOpenAI as LangchainAzureChatOpenAI
+from langchain_community.chat_models import ChatAnthropic as LangchainChatAnthropic
+from langchain_community.chat_models import ChatOpenAI as LangchainChatOpenAI
+# from langchain.chat_models.openai import convert_dict_to_message
+from langchain_community.adapters.openai import convert_dict_to_message
+
 from langchain.llms import VLLM, OpenAI
 from langchain.schema import ChatGeneration, ChatResult
 from langchain.schema.messages import (

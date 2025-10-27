@@ -15,8 +15,8 @@ from .register import register_toolkit
 
 
 class GoogleCalendarReadEvents(VirtualFunctionTool):
-    name = "GoogleCalendarReadEvents"
-    summary = "Read events by event_ids."
+    name: str = "GoogleCalendarReadEvents"
+    summary: str = "Read events by event_ids."
     parameters: List[ArgParameter] = [
         {
             "name": "event_ids",
@@ -41,8 +41,8 @@ class GoogleCalendarReadEvents(VirtualFunctionTool):
 
 
 class GoogleCalendarSearchEvents(VirtualFunctionTool):
-    name = "GoogleCalendarSearchEvents"
-    summary = "Search events by keywords, date range, or attendees. If certain arguments are not provided, the corresponding filters are not applied."
+    name: str = "GoogleCalendarSearchEvents"
+    summary: str = "Search events by keywords, date range, or attendees. If certain arguments are not provided, the corresponding filters are not applied."
     parameters: List[ArgParameter] = [
         {
             "name": "keywords",
@@ -85,8 +85,8 @@ class GoogleCalendarSearchEvents(VirtualFunctionTool):
 
 
 class GoogleCalendarSendInvitations(VirtualFunctionTool):
-    name = "GoogleCalendarSendInvitations"
-    summary = "Send event invitations to attendees."
+    name: str = "GoogleCalendarSendInvitations"
+    summary: str = "Send event invitations to attendees."
     parameters: List[ArgParameter] = [
         {
             "name": "event_id",
@@ -124,8 +124,8 @@ class GoogleCalendar(FunctionToolkit):
 
 
 class GmailSendEmail(VirtualFunctionTool):
-    name = "GmailSendEmail"
-    summary = "Send an email to one or multiple recipients, with optional scheduling, cc, and bcc."
+    name: str = "GmailSendEmail"
+    summary: str = "Send an email to one or multiple recipients, with optional scheduling, cc, and bcc."
     parameters: List[ArgParameter] = [
         {
             "name": "to",
@@ -186,8 +186,8 @@ class GmailSendEmail(VirtualFunctionTool):
 
 
 class GmailSearchEmails(VirtualFunctionTool):
-    name = "GmailSearchEmails"
-    summary = "Search for emails based on keywords, folders, labels, date range, or sender and recipient. If certain arguments are not provided, the corresponding filters are not applied."
+    name: str = "GmailSearchEmails"
+    summary: str = "Search for emails based on keywords, folders, labels, date range, or sender and recipient. If certain arguments are not provided, the corresponding filters are not applied."
     parameters: List[ArgParameter] = [
         {
             "name": "keywords",
@@ -248,8 +248,8 @@ class GmailSearchEmails(VirtualFunctionTool):
 
 
 class GmailReadEmail(VirtualFunctionTool):
-    name = "GmailReadEmail"
-    summary = "Read the content of an email, including attachments."
+    name: str = "GmailReadEmail"
+    summary: str = "Read the content of an email, including attachments."
     parameters: List[ArgParameter] = [
         {
             "name": "email_id",
@@ -312,8 +312,8 @@ class GmailReadEmail(VirtualFunctionTool):
 
 
 class GmailSearchContacts(VirtualFunctionTool):
-    name = "GmailSearchContacts"
-    summary = "Search for contacts based on filters. If certain arguments are not provided, the corresponding filters are not applied."
+    name: str = "GmailSearchContacts"
+    summary: str = "Search for contacts based on filters. If certain arguments are not provided, the corresponding filters are not applied."
     parameters: List[ArgParameter] = [
         {
             "name": "name",
@@ -373,8 +373,8 @@ class Gmail(FunctionToolkit):
 
 
 class SlackSendMessage(VirtualFunctionTool):
-    name = "SlackSendMessage"
-    summary = "Send a message and optional file to a channel or user."
+    name: str = "SlackSendMessage"
+    summary: str = "Send a message and optional file to a channel or user."
     parameters: List[ArgParameter] = [
         {
             "name": "recipient",
@@ -415,8 +415,8 @@ class SlackSendMessage(VirtualFunctionTool):
 
 
 class SlackSearchMessage(VirtualFunctionTool):
-    name = "SlackSearchMessage"
-    summary = "Search for messages in a channel or direct messages."
+    name: str = "SlackSearchMessage"
+    summary: str = "Search for messages in a channel or direct messages."
     parameters: List[ArgParameter] = [
         {
             "name": "query",
@@ -459,8 +459,8 @@ class SlackSearchMessage(VirtualFunctionTool):
 
 
 class SlackSearchChannelOrUser(VirtualFunctionTool):
-    name = "SlackSearchChannelOrUser"
-    summary = "Search for channels or users by query."
+    name: str = "SlackSearchChannelOrUser"
+    summary: str = "Search for channels or users by query."
     parameters: List[ArgParameter] = [
         {
             "name": "query",
@@ -497,8 +497,8 @@ class SlackSearchChannelOrUser(VirtualFunctionTool):
 
 
 class SlackGetUserDetails(VirtualFunctionTool):
-    name = "SlackGetUserDetails"
-    summary = "Retrieve the profile and status of a user."
+    name: str = "SlackGetUserDetails"
+    summary: str = "Retrieve the profile and status of a user."
     parameters: List[ArgParameter] = [
         {
             "name": "user_name",
@@ -545,8 +545,8 @@ class Slack(FunctionToolkit):
 
 
 class FacebookManagerGetUserProfile(VirtualFunctionTool):
-    name = "FacebookManagerGetUserProfile"
-    summary = "Get the user's profile information."
+    name: str = "FacebookManagerGetUserProfile"
+    summary: str = "Get the user's profile information."
     parameters: List[ArgParameter] = []
     returns: List[ArgReturn] = [
         {
@@ -559,8 +559,8 @@ class FacebookManagerGetUserProfile(VirtualFunctionTool):
 
 
 class FacebookManagerUpdateUserProfile(VirtualFunctionTool):
-    name = "FacebookManagerUpdateUserProfile"
-    summary = "Update the user's profile information."
+    name: str = "FacebookManagerUpdateUserProfile"
+    summary: str = "Update the user's profile information."
     parameters: List[ArgParameter] = [
         {
             "name": "updates",
@@ -585,8 +585,8 @@ class FacebookManagerUpdateUserProfile(VirtualFunctionTool):
 
 
 class FacebookManagerSearchFriends(VirtualFunctionTool):
-    name = "FacebookManagerSearchFriends"
-    summary = "Search for the user's friends by keyword."
+    name: str = "FacebookManagerSearchFriends"
+    summary: str = "Search for the user's friends by keyword."
     parameters: List[ArgParameter] = [
         {
             "name": "keyword",
@@ -617,8 +617,8 @@ class FacebookManagerSearchFriends(VirtualFunctionTool):
 
 
 class FacebookManagerCreatePost(VirtualFunctionTool):
-    name = "FacebookManagerCreatePost"
-    summary = "Create a new post on the user's timeline."
+    name: str = "FacebookManagerCreatePost"
+    summary: str = "Create a new post on the user's timeline."
     parameters: List[ArgParameter] = [
         {
             "name": "content",
@@ -655,8 +655,8 @@ class FacebookManagerCreatePost(VirtualFunctionTool):
 
 
 class FacebookManagerSearchPosts(VirtualFunctionTool):
-    name = "FacebookManagerSearchPosts"
-    summary = "Search for the user's own posts or other's posts by keyword."
+    name: str = "FacebookManagerSearchPosts"
+    summary: str = "Search for the user's own posts or other's posts by keyword."
     parameters: List[ArgParameter] = [
         {
             "name": "user_id",
@@ -715,8 +715,8 @@ class FacebookManager(FunctionToolkit):
 
 
 class NotionManagerCreatePage(VirtualFunctionTool):
-    name = "NotionManagerCreatePage"
-    summary = "Creates a new page in Notion."
+    name: str = "NotionManagerCreatePage"
+    summary: str = "Creates a new page in Notion."
     parameters: List[ArgParameter] = [
         {
             "name": "page_title",
@@ -757,8 +757,8 @@ class NotionManagerCreatePage(VirtualFunctionTool):
 
 
 class NotionManagerReadPage(VirtualFunctionTool):
-    name = "NotionManagerReadPage"
-    summary = "Read the content of a page in Notion."
+    name: str = "NotionManagerReadPage"
+    summary: str = "Read the content of a page in Notion."
     parameters: List[ArgParameter] = [
         {
             "name": "page_id",
@@ -783,8 +783,8 @@ class NotionManagerReadPage(VirtualFunctionTool):
 
 
 class NotionManagerEditPage(VirtualFunctionTool):
-    name = "NotionManagerEditPage"
-    summary = "Edits an existing page in Notion."
+    name: str = "NotionManagerEditPage"
+    summary: str = "Edits an existing page in Notion."
     parameters: List[ArgParameter] = [
         {
             "name": "page_id",
@@ -819,8 +819,8 @@ class NotionManagerEditPage(VirtualFunctionTool):
 
 
 class NotionManagerSharePage(VirtualFunctionTool):
-    name = "NotionManagerSharePage"
-    summary = "Shares a Notion page with others."
+    name: str = "NotionManagerSharePage"
+    summary: str = "Shares a Notion page with others."
     parameters: List[ArgParameter] = [
         {
             "name": "page_id",
@@ -855,8 +855,8 @@ class NotionManagerSharePage(VirtualFunctionTool):
 
 
 class NotionManagerSearchContent(VirtualFunctionTool):
-    name = "NotionManagerSearchContent"
-    summary = "Searches for content in Notion."
+    name: str = "NotionManagerSearchContent"
+    summary: str = "Searches for content in Notion."
     parameters: List[ArgParameter] = [
         {
             "name": "keywords",
@@ -899,8 +899,8 @@ class NotionManager(FunctionToolkit):
 
 
 class MessengerSendMessage(VirtualFunctionTool):
-    name = "MessengerSendMessage"
-    summary = "Sends a text message to a specified user."
+    name: str = "MessengerSendMessage"
+    summary: str = "Sends a text message to a specified user."
     parameters: List[ArgParameter] = [
         {
             "name": "recipient_id",
@@ -931,8 +931,8 @@ class MessengerSendMessage(VirtualFunctionTool):
 
 
 class MessengerReceiveMessage(VirtualFunctionTool):
-    name = "MessengerReceiveMessage"
-    summary = "Retrieves the latest messages for the user."
+    name: str = "MessengerReceiveMessage"
+    summary: str = "Retrieves the latest messages for the user."
     parameters: List[ArgParameter] = [
         {
             "name": "max_count",
@@ -957,8 +957,8 @@ class MessengerReceiveMessage(VirtualFunctionTool):
 
 
 class MessengerSendMediaFile(VirtualFunctionTool):
-    name = "MessengerSendMediaFile"
-    summary = "Sends a media file to a specified user."
+    name: str = "MessengerSendMediaFile"
+    summary: str = "Sends a media file to a specified user."
     parameters: List[ArgParameter] = [
         {
             "name": "recipient_id",
@@ -989,8 +989,8 @@ class MessengerSendMediaFile(VirtualFunctionTool):
 
 
 class MessengerShareFile(VirtualFunctionTool):
-    name = "MessengerShareFile"
-    summary = "Shares a file with a specified user."
+    name: str = "MessengerShareFile"
+    summary: str = "Shares a file with a specified user."
     parameters: List[ArgParameter] = [
         {
             "name": "recipient_id",
@@ -1021,8 +1021,8 @@ class MessengerShareFile(VirtualFunctionTool):
 
 
 class MessengerSearchInChat(VirtualFunctionTool):
-    name = "MessengerSearchInChat"
-    summary = "Searches for a specified term in a chat."
+    name: str = "MessengerSearchInChat"
+    summary: str = "Searches for a specified term in a chat."
     parameters: List[ArgParameter] = [
         {
             "name": "term",
@@ -1073,8 +1073,8 @@ class Messenger(FunctionToolkit):
 
 
 class ZoomManagerGetMeetingTranscript(VirtualFunctionTool):
-    name = "ZoomManagerGetMeetingTranscript"
-    summary = "Retrieves the transcript of a specific Zoom meeting."
+    name: str = "ZoomManagerGetMeetingTranscript"
+    summary: str = "Retrieves the transcript of a specific Zoom meeting."
     parameters: List[ArgParameter] = [
         {
             "name": "meeting_id",
@@ -1099,8 +1099,8 @@ class ZoomManagerGetMeetingTranscript(VirtualFunctionTool):
 
 
 class ZoomManagerSearchTranscript(VirtualFunctionTool):
-    name = "ZoomManagerSearchTranscript"
-    summary = (
+    name: str = "ZoomManagerSearchTranscript"
+    summary: str = (
         "Searches the transcript of a specific Zoom meeting for a keyword or phrase."
     )
     parameters: List[ArgParameter] = [
@@ -1133,8 +1133,8 @@ class ZoomManagerSearchTranscript(VirtualFunctionTool):
 
 
 class ZoomManagerGetParticipants(VirtualFunctionTool):
-    name = "ZoomManagerGetParticipants"
-    summary = "Retrieves the list of participants in a specific Zoom meeting."
+    name: str = "ZoomManagerGetParticipants"
+    summary: str = "Retrieves the list of participants in a specific Zoom meeting."
     parameters: List[ArgParameter] = [
         {
             "name": "meeting_id",
@@ -1156,8 +1156,8 @@ class ZoomManagerGetParticipants(VirtualFunctionTool):
 
 
 class ZoomManagerSearchMeetings(VirtualFunctionTool):
-    name = "ZoomManagerSearchMeetings"
-    summary = "Searches for Zoom meetings based on certain criteria."
+    name: str = "ZoomManagerSearchMeetings"
+    summary: str = "Searches for Zoom meetings based on certain criteria."
     parameters: List[ArgParameter] = [
         {
             "name": "criteria",

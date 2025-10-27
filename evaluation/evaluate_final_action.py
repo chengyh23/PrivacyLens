@@ -14,7 +14,8 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 sys.path.append('../helper')
-from utils import VLLM
+# from utils import VLLM
+from langchain_community.llms import VLLM
 
 
 def prepare_prompt_to_identify_sensitive_information(data_type, data_subject, trajectory):
@@ -246,7 +247,8 @@ def main():
 
     name_to_result = {}
 
-    for i in tqdm(range(len(data))):
+    # for i in tqdm(range(len(data))):
+    for i in tqdm(range(len(actions))):
         if args.step == 'extract_secret':
             prompt = prepare_prompt_to_identify_sensitive_information(
                 data_type=data[i]['seed']['data_type'],
@@ -288,7 +290,7 @@ def main():
             output = []
         else:
             output = vllm_engine.generate(inputs_in_chat_template).generations
-
+        print("-----", output)
         if args.step == 'extract_secret':
             secrets = post_process_extracted_secrets(output[0][0].text)
             name_to_result[data[i]['name']] = secrets
@@ -303,6 +305,7 @@ def main():
                     parsed_leakage_judgment = parse_leakage_judgment(o[0].text)
                     secret_judgment.append((s, parsed_leakage_judgment))
                     leak_info |= parsed_leakage_judgment
+            print("=====", secret_judgment)
             name_to_result[actions.iloc[i]['name']] = {'leak_info': leak_info, 'secret_judgment': secret_judgment}
         elif args.step == 'helpfulness':
             if len(output) == 0:

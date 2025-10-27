@@ -101,7 +101,7 @@ def retry(max_retries=5, initial_delay=1, backoff_factor=2, exceptions=(Exceptio
 
 @CacheMemory.cache
 @retry(max_retries=16, initial_delay=8, backoff_factor=1,
-       exceptions=(openai.error.OpenAIError, openai.error.RateLimitError))
+       exceptions=(openai.OpenAIError, openai.RateLimitError))
 def openai_chat_completion_with_retry(engine, messages, **kwargs):
     """A wrapper function to call openai.ChatCompletion.create with retry.
     Args:
@@ -109,6 +109,7 @@ def openai_chat_completion_with_retry(engine, messages, **kwargs):
         messages: [{'role': 'system'/'user'/'assistant'， 'content': '...'}, ...]
         **kwargs: max_tokens, temperature, top_p, ... (see OpenAI API documentation for details)
     """
+    openai.api_base = os.getenv('OPENAI_BASE_URL')
     if openai.api_type == 'azure':
         response = openai.ChatCompletion.create(engine=engine, messages=messages, **kwargs)
     else:
@@ -274,7 +275,7 @@ class VLLM(BaseLLM):
     vllm_kwargs: Dict[str, Any] = {}
     """Holds any model parameters valid for `vllm.LLM` call not explicitly specified."""
 
-    client: Any  #: :meta private:
+    client: Any = None  #: :meta private:
 
     @root_validator()
     def validate_environment(cls, values: Dict) -> Dict:
@@ -313,7 +314,7 @@ class VLLM(BaseLLM):
             "frequency_penalty": self.frequency_penalty,
             "stop": self.stop,
             "ignore_eos": self.ignore_eos,
-            "use_beam_search": self.use_beam_search,
+            # "use_beam_search": self.use_beam_search,
             "logprobs": self.logprobs,
         }
 
@@ -336,6 +337,7 @@ class VLLM(BaseLLM):
         sampling_params = SamplingParams(**params)
         # call the model
         outputs = self.client.generate(prompts, sampling_params)
+        # outputs = self.generate(prompts, sampling_params)
 
         generations = []
         for output in outputs:
