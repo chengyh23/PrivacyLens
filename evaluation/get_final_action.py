@@ -29,7 +29,9 @@ sys.path.append(str((script_dir / "../helper").resolve()))
 # sys.path.append('../helper')
 from utils import openai_chat_completion_with_retry, print_api_usage, claude_chat_completion_with_retry
 # from utils import openai_chat_completion_with_retry, print_api_usage, VLLM, claude_chat_completion_with_retry
-from langchain_community.llms import VLLM
+from vllm import LLM, SamplingParams
+# from langchain_community.llms import VLLM
+
 
 def prepare_args():
     parser = argparse.ArgumentParser()
@@ -50,6 +52,8 @@ def prepare_args():
                         help='The model to use for the agent.')
     parser.add_argument('--gpu-num', type=int, default=1,
                         help='Number of GPUs to use for VLLM.')
+    parser.add_argument('--gpu-memory-utilization', type=float, default=0.9,
+                        help='The ratio (between 0 and 1) of GPU memory to reserve for the model weights, activations, and KV cache.')
     parser.add_argument('--hf-cache-dir', type=str,
                         help='The cache directory for the Hugging Face model.')
 
@@ -110,6 +114,123 @@ def prepare_agent_prompt(
 
     return final_prompt
 
+def  get_final_actions(args, model_name_or_path: str):
+    """
+    Generate final actions for all test cases using the specified model.
+
+    Args:
+        args: Argument namespace with the following attributes:
+            input_path (str): Path to the JSON data file with agent test cases.
+            output_path (str): Path to save the generated results (not always used here).
+            prompt_type (str): Which prompt template to use ("naive" or "privacy_enhanced").
+            start_index (int): Index in the dataset to start processing (default 0).
+            num (int): Number of cases to process (-1 means all).
+            gpu_num (int): Number of GPUs for model inference (when using vllm).
+            hf_cache_dir (str): HuggingFace cache directory for model/tokenizer.
+            specific_case_name (str): Name of a single case to run (overrides start_index/num if set).
+        model_name_or_path (str): model name or path.
+    """
+    if 'gpt' in model_name_or_path.lower():
+        openai.api_key = os.environ['OPENAI_API_KEY']
+        openai.api_type = os.environ['OPENAI_API_TYPE']
+        if openai.api_type == 'azure':
+            openai.api_base = os.environ['OPENAI_API_BASE']
+            openai.api_version = os.environ['OPENAI_API_VERSION']
+
+    if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen']):
+        sampling_params = SamplingParams(
+            temperature=0.0,
+            max_tokens=1000,        # corresponds to max_new_tokens
+        )
+        vllm_engine = LLM(
+            model=model_name_or_path,
+            tensor_parallel_size=args.gpu_num,
+            trust_remote_code=True,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            max_num_batched_tokens=16000,
+            # max_num_batched_tokens=2048,  # finish_reason=length
+            download_dir=args.hf_cache_dir
+        )
+        # vllm_engine = VLLM(
+        #     model=model,
+        #     tensor_parallel_size=args.gpu_num,
+        #     trust_remote_code=True,
+        #     gpu_memory_utilization=0.5,
+        #     max_num_batched_tokens=16000,
+        #     max_new_tokens=1000,
+        #     temperature=0,
+        #     download_dir=args.hf_cache_dir,
+        #     # gpu_memory_utilization=0.4,
+        # )
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=args.hf_cache_dir)
+
+    with open(args.input_path, 'r') as f:
+        data = json.load(f)
+
+    if args.specific_case_name:
+        for i, case in enumerate(data):
+            if case['name'] == args.specific_case_name:
+                args.start_index = i
+                end_index = i + 1
+                break
+        else:
+            raise ValueError(f'Error: The specific case name {args.specific_case_name} is not found.')
+    else:
+        if args.num == -1:
+            end_index = len(data)
+        else:
+            end_index = min(args.start_index + args.num, len(data))
+
+    result = {
+        'name': [],
+        'final_action': [],
+    }
+
+    for i in tqdm(range(args.start_index, end_index)):
+        result['name'].append(data[i]['name'])
+        # final_action = get_final_action(data[i], args)
+        case = data[i]
+        agent_prompt = prepare_agent_prompt(
+            prompt_type=args.prompt_type,
+            user_name=case['trajectory']['user_name'],
+            user_email=case['trajectory']['user_email'],
+            user_instruction=case['trajectory']['user_instruction'],
+            toolkits=case['trajectory']['toolkits'],
+            executable_trajectory=case['trajectory']['executable_trajectory'],
+            final_action=case['trajectory']['final_action']
+        )
+
+        if 'gpt' in model_name_or_path.lower():
+            final_action = openai_chat_completion_with_retry(
+                engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
+                max_tokens=400, temperature=0.0)
+            final_action = final_action.choices[0].message['content'].strip()
+        elif 'claude' in model_name_or_path.lower():
+            final_action = claude_chat_completion_with_retry(
+                engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
+                max_tokens=400, temperature=0.0)
+            final_action = final_action.content[0].text.strip()
+        elif any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen']):
+            inputs = [agent_prompt]
+            inputs_in_chat_template = []
+            if 'vicuna' in model_name_or_path:
+                for input_text in inputs:
+                    inputs_in_chat_template.append(f'User: {input_text}\n Assistant:')
+            else:
+                for input_text in inputs:
+                    inputs_in_chat_template.append(
+                        tokenizer.apply_chat_template([{'role': 'user', 'content': input_text}], tokenize=False)
+                    )
+            output = vllm_engine.generate(inputs_in_chat_template, sampling_params)
+            # output = vllm_engine.generate(inputs_in_chat_template).generations
+            final_action = output[0].outputs[0].text.strip()
+            # final_action = output[0][0].text.strip()
+        else:
+            raise NotImplementedError
+        # Post-process the model output.
+        print(final_action) # debug
+        result['final_action'].append(post_process(final_action))
+    return result
 
 def post_process(s):
     if s.startswith('<|start_header_id|>assistant<|end_header_id|>'):
@@ -136,94 +257,7 @@ def main():
     args = prepare_args()
     load_dotenv()
 
-    if 'gpt' in args.model:
-        openai.api_key = os.environ['OPENAI_API_KEY']
-        openai.api_type = os.environ['OPENAI_API_TYPE']
-        if openai.api_type == 'azure':
-            openai.api_base = os.environ['OPENAI_API_BASE']
-            openai.api_version = os.environ['OPENAI_API_VERSION']
-
-    if 'mistral' in args.model or 'llama' in args.model or 'zephyr' in args.model or 'vicuna' in args.model:
-        vllm_engine = VLLM(
-            model=args.model,
-            tensor_parallel_size=args.gpu_num,
-            trust_remote_code=True,
-            # max_num_batched_tokens=16000,
-            max_num_batched_tokens=8000,
-            max_new_tokens=1000,
-            temperature=0,
-            download_dir=args.hf_cache_dir,
-            # gpu_memory_utilization=0.4,
-        )
-        tokenizer = AutoTokenizer.from_pretrained(args.model, cache_dir=args.hf_cache_dir)
-
-    with open(args.input_path, 'r') as f:
-        data = json.load(f)
-
-    if args.specific_case_name:
-        for i, case in enumerate(data):
-            if case['name'] == args.specific_case_name:
-                args.start_index = i
-                end_index = i + 1
-                break
-        else:
-            raise ValueError(f'Error: The specific case name {args.specific_case_name} is not found.')
-    else:
-        if args.num == -1:
-            end_index = len(data)
-        else:
-            end_index = min(args.start_index + args.num, len(data))
-
-    result = {
-        'name': [],
-        'final_action': [],
-    }
-
-    for i in tqdm(range(args.start_index, end_index)):
-        result['name'].append(data[i]['name'])
-        agent_prompt = prepare_agent_prompt(
-            prompt_type=args.prompt_type,
-            user_name=data[i]['trajectory']['user_name'],
-            user_email=data[i]['trajectory']['user_email'],
-            user_instruction=data[i]['trajectory']['user_instruction'],
-            toolkits=data[i]['trajectory']['toolkits'],
-            executable_trajectory=data[i]['trajectory']['executable_trajectory'],
-            final_action=data[i]['trajectory']['final_action']
-        )
-        ######################################
-        ####### TODO add your code here ######
-        # append to agent_prompt
-        ######################################
-
-        if 'gpt' in args.model or 'GPT' in args.model:
-            final_action = openai_chat_completion_with_retry(
-                engine=args.model, messages=[{'role': 'user', 'content': agent_prompt}],
-                max_tokens=400, temperature=0.0)
-            final_action = final_action.choices[0].message['content'].strip()
-        elif 'claude' in args.model:
-            final_action = claude_chat_completion_with_retry(
-                engine=args.model, messages=[{'role': 'user', 'content': agent_prompt}],
-                max_tokens=400, temperature=0.0)
-            final_action = final_action.content[0].text.strip()
-        elif 'mistral' in args.model or 'Mistral' in args.model or 'llama' in args.model or 'zephyr' in args.model or 'vicuna' in args.model:
-            inputs = [agent_prompt]
-            inputs_in_chat_template = []
-            if 'vicuna' in args.model:
-                for input_text in inputs:
-                    inputs_in_chat_template.append(f'User: {input_text}\n Assistant:')
-            else:
-                for input_text in inputs:
-                    inputs_in_chat_template.append(
-                        tokenizer.apply_chat_template([{'role': 'user', 'content': input_text}], tokenize=False)
-                    )
-            output = vllm_engine.generate(inputs_in_chat_template).generations
-            final_action = output[0][0].text.strip()
-        else:
-            raise NotImplementedError
-
-        # Post-process the model output.
-        result['final_action'].append(post_process(final_action))
-
+    result = get_final_actions(args)
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     try:
         pd.DataFrame(result).to_csv(args.output_path, index=False)

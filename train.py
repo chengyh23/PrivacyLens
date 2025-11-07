@@ -67,12 +67,6 @@ def main():
     # logger.info(f"Data parameters {data_args}")
     logger.info(f"Training/evaluation parameters {training_args}")
 
-    # Check for last checkpoint
-    last_checkpoint = None
-    if training_args.resume_from_checkpoint is None and training_args.do_train:
-        last_checkpoint = get_last_checkpoint(training_args.output_dir)
-    if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
-        logger.info(f"Checkpoint detected, resuming training at {last_checkpoint=}.")
 
     # Set seed for reproducibility
     set_seed(training_args.seed)
@@ -98,7 +92,7 @@ def main():
     #####################################
     # Load tokenizer and process datasets
     #####################################
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
 
     #####################
     # Apply chat template
@@ -106,15 +100,17 @@ def main():
     raw_datasets = raw_datasets.map(
         apply_chat_template,
         fn_kwargs={"tokenizer": tokenizer, "task": "dpo", "prompt": training_args.prompt},
-        # num_proc=training_args.preprocessing_num_workers,
-        num_proc=1,
+        num_proc=training_args.dataloader_num_workers,
+        # num_proc=1,
         remove_columns=column_names,
         desc="Formatting comparisons with prompt template",
     )
 
 
-    model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
-    ref_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B-Instruct")
+    model = model_args.model_name_or_path
+    ref_model = model
+    # model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path)
+    # ref_model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path)
 
     #########################
     # Instantiate DPO trainer
@@ -132,38 +128,48 @@ def main():
     # Training loop
     ###############
     checkpoint = None
-    if training_args.resume_from_checkpoint is not None:
-        checkpoint = training_args.resume_from_checkpoint
-    elif last_checkpoint is not None:
-        checkpoint = last_checkpoint
-    train_result = trainer.train(resume_from_checkpoint=checkpoint)
-    metrics = train_result.metrics
-    metrics["train_samples"] = len(raw_datasets["train"])
-    trainer.log_metrics("train", metrics)
-    trainer.save_metrics("train", metrics)
-    trainer.save_state()
 
-    logger.info("*** Training complete ***")
+    if training_args.do_train:
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        else:
+            last_checkpoint = get_last_checkpoint(training_args.output_dir)
+            if last_checkpoint is not None:
+                logger.info(f"Resuming training from checkpoint at: {last_checkpoint}")
+                checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        metrics = train_result.metrics
+        metrics["train_samples"] = len(raw_datasets["train"])
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
 
-    ##################################
-    # Save model and create model card
-    ##################################
-    logger.info("*** Save model ***")
-    trainer.save_model(training_args.output_dir)
-    logger.info(f"Model saved to {training_args.output_dir}")
+        logger.info("*** Training complete ***")
 
-    # Save everything else on main process
-    kwargs = {
-        "finetuned_from": model_args.model_name_or_path,
-        "dataset": [training_args.data_path],
-        "dataset_tags": [training_args.data_path],
-        "tags": ["alignment-handbook"],
-    }
-    if trainer.accelerator.is_main_process:
-        trainer.create_model_card(**kwargs)
-        # Restore k,v cache for fast inference
-        trainer.model.config.use_cache = True
-        trainer.model.config.save_pretrained(training_args.output_dir)
+        ##################################
+        # Save model and create model card
+        ##################################
+        logger.info("*** Save model ***")
+        trainer.save_model(training_args.output_dir)
+        logger.info(f"Model saved to {training_args.output_dir}")
+
+        # Save everything else on main process
+        kwargs = {  # https://github.com/huggingface/trl/blob/main/trl/trainer/base_trainer.py#L27
+            "model_name": training_args.hub_model_id,
+            "dataset_name": training_args.data_path,
+            "tags": ["alignment-handbook"],
+        }
+        # kwargs = {
+        #     "finetuned_from": model_args.model_name_or_path,
+        #     "dataset": [training_args.data_path],
+        #     "dataset_tags": [training_args.data_path],
+        #     "tags": ["alignment-handbook"],
+        # }
+        if trainer.accelerator.is_main_process:
+            trainer.create_model_card(**kwargs)
+            # Restore k,v cache for fast inference
+            trainer.model.config.use_cache = True
+            trainer.model.config.save_pretrained(training_args.output_dir)
 
     ##########
     # Evaluate

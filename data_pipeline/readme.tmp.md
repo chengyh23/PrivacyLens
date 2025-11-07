@@ -12,4 +12,4 @@ MA
 3. reward_shaping
 4. value_iteration_MA
 5. preference_pairs_MA
-5. DPOTrain
+6. DPOTrain

@@ -10,6 +10,11 @@ evaluation/*.lock
 evaluation/models--*
 wandb/
 outputs/
+outputs_test/
+data/main_data_test.json
+data/main_data_train.json
+data/main_data_validation.json
+
 
 # temporarily files
 temp_*

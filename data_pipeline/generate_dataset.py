@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from sklearn.model_selection import train_test_split
 
 script_dir = Path(__file__).resolve().parent
 
@@ -38,6 +39,57 @@ def parse_args():
         help="Prompt type to use in prepare_agent_prompt"
     )
     return parser.parse_args()
+
+
+
+def get_ids_from_split(split_name: str, pref_pairs_dir: str = "data_pipeline/pref_pairs"):
+    """
+    Loads all prompt ids (e.g., main123) from split files in data_pipeline/pref_pairs/{split_name}.jsonl
+    Expects that each line in the file has a field: "id": "mainXXX"
+    """
+    ids = set()
+    
+    split_file = os.path.join(pref_pairs_dir, f"{split_name}.json")
+    if not os.path.exists(split_file):
+        raise RuntimeError(f"Pref pairs split file does not exist: {split_file}")
+    with open(split_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        for item in data:
+            id_value = item.get("id")
+            if id_value is None:
+                raise ValueError(f'Missing "id" field in pref_pairs split file: {split_file}')
+            ids.add(id_value)
+    return ids
+
+def split_dataset_by_pref_pairs(dataset_path: str):
+    """
+    Splits the output_dataset (list of dicts) into train/val/test splits using the ids in pref_pairs split files.
+    Returns: {split_name: [dict,...]}
+    """
+    with open(dataset_path, "r", encoding="utf-8") as f:
+        dataset = json.load(f)
+
+    split_names = ["train", "validation", "test"]
+    split_ids = {split: get_ids_from_split(split) for split in split_names}
+    id_to_item = {item["name"]: item for item in dataset}
+
+    splits = {split: [] for split in split_names}
+    for split in split_names:
+        for id_ in split_ids[split]:
+            if not id_ in id_to_item:
+                error_msg = f"ID {id_} not found in output_dataset"
+                raise ValueError(error_msg)
+            splits[split].append(id_to_item[id_])
+    
+    for split in split_names:
+        out_filename = dataset_path.replace(".json", f"_{split}.json")
+        if os.path.exists(out_filename):
+            print(f"{out_filename} already exists, skipping.")
+            continue
+        with open(out_filename, "w", encoding="utf-8") as f:
+            json.dump(splits[split], f, indent=2, ensure_ascii=False)
+    return splits
+
 
 def main():
     args = parse_args()
@@ -82,10 +134,29 @@ def main():
             "rejected": rejected,
         }
         output_dataset.append(output)
-    # Save output as dataset.json
-    with open(args.output_path, "w") as f:
-        json.dump(output_dataset, f, indent=2, ensure_ascii=False)
-    print(f"Dataset written to {args.output_path}")
+    
+    # # Save output as dataset.json
+    # with open(args.output_path, "w") as f:
+    #     json.dump(output_dataset, f, indent=2, ensure_ascii=False)
+    # print(f"Dataset written to {args.output_path}")
+    
+    # Split the dataset and save in separate files: train (80%), validation (10%), test (10%)
+    train_data, tmp_data = train_test_split(output_dataset, test_size=0.2, random_state=42)
+    val_data, test_data = train_test_split(tmp_data, test_size=0.5, random_state=42)
+
+    base = args.output_path.rsplit(".", 1)[0]
+    train_path = base + "_train.json"
+    val_path = base + "_val.json"
+    test_path = base + "_test.json"
+
+    with open(train_path, "w") as f:
+        json.dump(train_data, f, indent=2, ensure_ascii=False)
+    with open(val_path, "w") as f:
+        json.dump(val_data, f, indent=2, ensure_ascii=False)
+    with open(test_path, "w") as f:
+        json.dump(test_data, f, indent=2, ensure_ascii=False)
+    print(f"Splits written to {train_path}, {val_path}, {test_path}")
 
 if __name__ == "__main__":
-    main()
+    # main()
+    split_dataset_by_pref_pairs(dataset_path = "data/main_data.json")
