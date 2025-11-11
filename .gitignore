@@ -14,7 +14,7 @@ outputs_test/
 data/main_data_test.json
 data/main_data_train.json
 data/main_data_validation.json
-
+data_embedding/
 
 # temporarily files
 temp_*

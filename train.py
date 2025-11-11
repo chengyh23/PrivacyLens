@@ -14,6 +14,7 @@ from transformers.trainer_utils import get_last_checkpoint
 logger = logging.getLogger(__name__)
 
 def apply_chat_template(example, tokenizer, task, prompt):
+    # TODO tokenizer.apply_chat_template
     assert task in ["dpo"]
 
     if prompt == "qwen2-boxed":
