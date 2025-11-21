@@ -159,4 +159,7 @@ def main():
 
 if __name__ == "__main__":
     # main()
-    split_dataset_by_pref_pairs(dataset_path = "data/main_data.json")
+    
+    # split_dataset_by_pref_pairs(dataset_path = "data/main_data.json")
+    ids = get_ids_from_split('train')
+    print(len(ids))

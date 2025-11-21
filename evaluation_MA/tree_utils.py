@@ -131,6 +131,10 @@ class MultiAgentTree:
         """Get all leaf nodes in the tree."""
         return self.root.get_all_leaves()
     
+    def get_node_by_index(self, index: List[int]) -> TreeNode:
+        # TODO redundant with TreeNode.get_node_by_index
+        return self.root.get_node_by_index(index)
+
     def get_path_to_leaf(self, leaf_index: List[int]) -> List[TreeNode]:
         """Get the path from root to a specific leaf node."""
         leaf_node = self.root.get_node_by_index(leaf_index)
@@ -162,6 +166,50 @@ class MultiAgentTree:
             results.append(result)
         
         return results
+
+class Forest:
+    def __init__(self, trees: List[MultiAgentTree] = None):
+        """
+        Params:
+            filepath (str):
+                List of Tree
+        """
+        self.trees = trees
+
+    @classmethod
+    def from_dict(cls, filepath: str) -> 'Forest':
+        """Load forest from JSON file."""
+        assert filepath is not None
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return cls(
+            trees=[MultiAgentTree.from_dict(tree_data) for tree_data in data]
+        )
+    def __len__(self):
+        """Return the number of trees in the forest."""
+        return len(self.trees) if self.trees is not None else 0
+        
+    def __getitem__(self, idx):
+        """Allows indexing into the Forest to get a tree by integer index."""
+        if self.trees is None:
+            raise IndexError("Forest is empty.")
+        return self.trees[idx]
+
+    def to_dict(self, filepath: str, verbose: bool =False):
+    # def save_forest_to_json(forest: List[MultiAgentTree], filepath: str):
+        """Save a forest (list of MultiAgentTree) to a JSON file."""
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump([tree.to_dict() for tree in self.trees], f, indent=2, ensure_ascii=False)
+        if verbose:
+            print(f"Saved forest with {len(self.trees)} trees to {filepath}")
+
+    def get_tree_by_name(self, name: str):        
+        for tree in self.trees:
+            if tree.name == name:
+                return tree
+        raise ValueError(f"No tree named {name} in the given forest")
+        return None
+
 
 
 def build_tree_from_flat_data(flat_data: List[Dict[str, Any]]) -> MultiAgentTree:
@@ -225,17 +273,6 @@ def load_tree_from_json(filepath: str) -> MultiAgentTree:
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
     return MultiAgentTree.from_dict(data)
-
-def load_forest_from_json(filepath: str) -> List[MultiAgentTree]:
-    """Load forest from JSON file."""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return [MultiAgentTree.from_dict(tree_data) for tree_data in data]
-
-def save_forest_to_json(forest: List[MultiAgentTree], filepath: str):
-    """Save a forest (list of MultiAgentTree) to a JSON file."""
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump([tree.to_dict() for tree in forest], f, indent=2, ensure_ascii=False)
 
 # Example usage and testing functions
 def example_usage():

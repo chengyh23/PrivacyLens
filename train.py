@@ -2,6 +2,7 @@
 import logging
 import sys
 from dataclasses import dataclass, field
+import json
 
 from datasets import load_dataset
 from trl import DPOConfig, DPOTrainer
@@ -10,11 +11,59 @@ import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
+from evaluation.get_final_action import  prepare_agent_prompt
 
 logger = logging.getLogger(__name__)
 
+def apply_chat_template_dpo(example, tokenizer, original_data_path, prompt_type: str):
+    """
+    Get prompt by name from original data
+    """
+    with open(original_data_path, 'r') as f:
+        original_data = json.load(f)
+    
+    case = None
+    for entry in original_data:
+        if entry['name'] == example['name']:
+            case = entry
+    assert case is not None
+
+    agent_prompt = prepare_agent_prompt(
+        prompt_type=prompt_type,
+        user_name=case['trajectory']['user_name'],
+        user_email=case['trajectory']['user_email'],
+        user_instruction=case['trajectory']['user_instruction'],
+        toolkits=case['trajectory']['toolkits'],
+        executable_trajectory=case['trajectory']['executable_trajectory'],
+        final_action=case['trajectory']['final_action']
+    )
+
+    agent_prompt_in_chat_template = tokenizer.apply_chat_template(
+        [{'role': 'user', 'content': agent_prompt}], tokenize=False, add_generation_prompt=True
+    )
+    new_example = {
+        'prompt': agent_prompt_in_chat_template,
+        'chosen': example['chosen'],
+        'rejected': example['rejected'],
+    }
+    return new_example
+
+def apply_chat_template_auto(example, tokenizer, task):
+    assert task in ["dpo"]
+
+    agent_prompt = example['prompt']
+    agent_prompt_in_chat_template = tokenizer.apply_chat_template(
+        [{'role': 'user', 'content': agent_prompt}], tokenize=False, add_generation_prompt=True
+    )
+    new_example = {
+        'prompt': agent_prompt_in_chat_template,
+        'chosen': example['chosen'],
+        'rejected': example['rejected'],
+    }
+    return new_example
+
 def apply_chat_template(example, tokenizer, task, prompt):
-    # TODO tokenizer.apply_chat_template
+    # TODO tokenizer.apply_chat_template -> apply_chat_template_auto
     assert task in ["dpo"]
 
     if prompt == "qwen2-boxed":
@@ -42,11 +91,21 @@ def apply_chat_template(example, tokenizer, task, prompt):
 @dataclass
 class StepDPOConfig(DPOConfig):
     data_path: str = field(default="data_pipeline/dataset.json")
-    prompt: str = field(default="alpaca")
+    # prompt: str = field(default="alpaca")
+    prompt: str = field(default=None)
 
 def main():    
     parser = TrlParser((ModelConfig, StepDPOConfig))
     model_args, training_args = parser.parse_args_and_config()
+
+    # # DEBUG gemma training
+    # # print("tokenizer length:", len(tokenizer))
+    # # print("model:", model_args.model_name_or_path)
+    # model = AutoModelForCausalLM.from_pretrained("google/gemma-3-1b-it", torch_dtype="bfloat16")
+    # print("model embeddings:", model.get_input_embeddings().weight.shape)
+    # # print("ref embeddings:", ref_model.get_input_embeddings().weight.shape)
+    # # print("pad_token_id:", tokenizer.pad_token_id)
+    # return
 
     #######
     # Setup
@@ -84,6 +143,13 @@ def main():
         )
     else:
         raw_datasets = load_dataset(training_args.data_path)
+    
+    if not "test" in raw_datasets:
+        raw_datasets = raw_datasets["train"].train_test_split(
+            test_size=0.1,          # 10% validation
+            seed=42,                # <— this makes it deterministic
+            shuffle=True            # enable shuffling before splitting
+        )
 
     logger.info(
         f"Training on the following splits: {[split + ' : ' + str(dset.num_rows) for split, dset in raw_datasets.items()]}"
@@ -98,14 +164,27 @@ def main():
     #####################
     # Apply chat template
     #####################
-    raw_datasets = raw_datasets.map(
-        apply_chat_template,
-        fn_kwargs={"tokenizer": tokenizer, "task": "dpo", "prompt": training_args.prompt},
-        num_proc=training_args.dataloader_num_workers,
-        # num_proc=1,
-        remove_columns=column_names,
-        desc="Formatting comparisons with prompt template",
-    )
+    if 'prompt' in raw_datasets['train'].features:  # read prompt directly from raw_datasets
+        raw_datasets = raw_datasets.map(
+            apply_chat_template_auto,
+            fn_kwargs={"tokenizer": tokenizer, "task": "dpo"},
+            num_proc=training_args.dataloader_num_workers,
+            # num_proc=1,
+            remove_columns=column_names,
+            desc="Formatting comparisons with prompt template",
+        )
+    else:   # get prompt from original data (PrivacyLens) based on name
+        original_data_path = "data/main_data.json"
+        raw_datasets = raw_datasets.map(
+            # apply_chat_template,
+            # fn_kwargs={"tokenizer": tokenizer, "task": "dpo", "prompt": training_args.prompt},
+            apply_chat_template_dpo,
+            fn_kwargs={"tokenizer": tokenizer, "original_data_path": original_data_path, "prompt_type": 'naive'},
+            num_proc=training_args.dataloader_num_workers,
+            # num_proc=1,
+            remove_columns=column_names,
+            desc="Formatting comparisons with prompt template",
+        )
 
 
     model = model_args.model_name_or_path

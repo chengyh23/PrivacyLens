@@ -31,6 +31,7 @@ from utils import openai_chat_completion_with_retry, print_api_usage, claude_cha
 # from utils import openai_chat_completion_with_retry, print_api_usage, VLLM, claude_chat_completion_with_retry
 from vllm import LLM, SamplingParams
 # from langchain_community.llms import VLLM
+from openai import OpenAI
 
 
 def prepare_args():
@@ -59,6 +60,44 @@ def prepare_args():
 
     return parser.parse_args()
 
+def prepare_agent_prompt_with_example(
+        prompt_type,
+        user_name,
+        user_email,
+        user_instruction,
+        toolkits,
+        executable_trajectory,
+        final_action
+):
+    agent_prompt = prepare_agent_prompt(
+        prompt_type,
+        user_name,
+        user_email,
+        user_instruction,
+        toolkits,
+        executable_trajectory,
+        final_action
+    )
+    agent_prompt += (
+        "\n\n---\n"
+        "Your output will be parsed by a STRICT, CASE-SENSITIVE parser that "
+        "searches for the exact keys 'Thought:', 'Action:', and 'Action Input:'.\n"
+        "Please follow the format below in your response:\n"
+        "<RESULT>\n"
+        "Thought: <Brief analysis and reasoning>\n"
+        "Action: <The specified action name>\n"
+        "Action Input: <JSON-formatted input for the action>\n"
+        "</RESULT>\n"
+        # "\nFor example:\n"
+        # "<RESULT>\n"
+        # "Thought: The User has asked me to create a Facebook post about the interesting work they've been doing. I can find the necessary information from their Notion page. I will use the FacebookManagerCreatePost tool to create a new post on the User's timeline.\n"
+        # "Action: FacebookManagerCreatePost\n"
+        # "Action Input: {\"content\": \"Exciting news! I've been working on some intriguing cases lately. Check out my latest Notion page for details on a high-profile embezzlement case and my recent participation in a criminal defense strategies seminar. #law #criminaldefense #notion\"}"
+        # "</RESULT>\n"
+        "\n---\n"
+    )
+    final_prompt = agent_prompt
+    return final_prompt
 
 def prepare_agent_prompt(
         prompt_type,
@@ -114,13 +153,93 @@ def prepare_agent_prompt(
 
     return final_prompt
 
-def  get_final_actions(args, model_name_or_path: str):
+def generate_model_response(agent_prompt, model_name_or_path, tokenizer, vllm_engine, sampling_params,):
+    # TODO model_name_or_path and vllm_engine could be conflict?
     """
-    Generate final actions for all test cases using the specified model.
+    If agent_prompt is a str:
+        generate sampling_params.n samples
+    If agent_prompt is a list of str:
+        For each prompt in agent_prompt, generate sampling_params.n samples.
+
+    Params:
+        agent_prompt (str or List[str]):
+            prompt
+        sampling_params:
+            for vllm_engine
+    
+    Return:
+        final_actions (List[str]) or List[List[str]]:
+
+    """
+    # generat model response
+    final_actions_batch = []
+    # final_actions = []
+    if 'gpt' in model_name_or_path.lower() or 'claude' in model_name_or_path.lower():
+        # final_action = openai_chat_completion_with_retry(
+        #     engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
+        #     max_tokens=400, temperature=0.0)
+        # final_action = final_action.choices[0].message['content'].strip()
+        
+        client = OpenAI()
+        for _ in range(sampling_params.n):
+            resp = client.responses.create(
+                model=model_name_or_path,   # "gpt-5",
+                input=agent_prompt,
+                # seed=random.randint(1, 1_000_000_000),  # new random seed each call
+            )
+            final_action = resp.output_text.strip()
+            final_actions.append(final_action)
+    elif 'claude' in model_name_or_path.lower():
+        final_action = claude_chat_completion_with_retry(
+            engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
+            max_tokens=400, temperature=0.0)
+        final_action = final_action.content[0].text.strip()
+    elif any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
+        if isinstance(agent_prompt, str): # TODO
+            inputs = [agent_prompt]
+        elif isinstance(agent_prompt, list):
+            inputs = agent_prompt
+        else:
+            raise TypeError("Invalid agent_prompt type: must be str or list of str")
+        inputs_in_chat_template = []
+        if 'vicuna' in model_name_or_path:
+            for input_text in inputs:
+                inputs_in_chat_template.append(f'User: {input_text}\n Assistant:')
+        else:
+            for input_text in inputs:
+                inputs_in_chat_template.append(
+                    tokenizer.apply_chat_template([{'role': 'user', 'content': input_text}], tokenize=False, add_generation_prompt=True)
+                )
+        output = vllm_engine.generate(inputs_in_chat_template, sampling_params)
+        # output = vllm_engine.generate(inputs_in_chat_template).generations
+        for _i in range(len(inputs)):
+            final_actions = []
+            for _n in range(sampling_params.n):
+                final_action = output[_i].outputs[_n].text.strip()
+                # final_action = output[0].outputs[_n].text.strip()
+                # final_action = output[0][0].text.strip()
+                final_actions.append(final_action)
+                # TODO should postprocess inside this function or later?
+            final_actions_batch.append(final_actions)
+    else:
+        raise NotImplementedError
+
+    # return final_actions
+    if isinstance(agent_prompt, str): # TODO
+        return final_actions_batch[0]
+    elif isinstance(agent_prompt, list):
+        return final_actions_batch
+    else:
+        raise TypeError("Invalid agent_prompt type: must be str or list of str")
+
+def get_final_actions_aug(args, model_name_or_path: str, num_case: int, n_sample_per_case: int =1):
+    """
+    Generate final actions from prompt rather than construct prompt from scratch
 
     Args:
         args: Argument namespace with the following attributes:
             input_path (str): Path to the JSON data file with agent test cases.
+                "data_pipeline/pref_pairs/train.json"
             output_path (str): Path to save the generated results (not always used here).
             prompt_type (str): Which prompt template to use ("naive" or "privacy_enhanced").
             start_index (int): Index in the dataset to start processing (default 0).
@@ -129,6 +248,9 @@ def  get_final_actions(args, model_name_or_path: str):
             hf_cache_dir (str): HuggingFace cache directory for model/tokenizer.
             specific_case_name (str): Name of a single case to run (overrides start_index/num if set).
         model_name_or_path (str): model name or path.
+        n_sample_per_prompt (int): Number of output sequences to return for a given prompt.
+    Return:
+        result: dict. {'name': [], 'final_action': []}
     """
     if 'gpt' in model_name_or_path.lower():
         openai.api_key = os.environ['OPENAI_API_KEY']
@@ -137,9 +259,14 @@ def  get_final_actions(args, model_name_or_path: str):
             openai.api_base = os.environ['OPENAI_API_BASE']
             openai.api_version = os.environ['OPENAI_API_VERSION']
 
-    if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen']):
+    if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
+        if n_sample_per_case == 1:    # n must be 1 when using greedy sampling
+            _T = 0.0
+        else:
+            _T = 1.0
         sampling_params = SamplingParams(
-            temperature=0.0,
+            n=n_sample_per_case,
+            temperature=_T,
             max_tokens=1000,        # corresponds to max_new_tokens
         )
         vllm_engine = LLM(
@@ -176,41 +303,38 @@ def  get_final_actions(args, model_name_or_path: str):
         else:
             raise ValueError(f'Error: The specific case name {args.specific_case_name} is not found.')
     else:
-        if args.num == -1:
+        if num_case == -1:
             end_index = len(data)
         else:
-            end_index = min(args.start_index + args.num, len(data))
+            end_index = min(args.start_index + num_case, len(data))
 
     result = {
         'name': [],
         'final_action': [],
     }
 
-    for i in tqdm(range(args.start_index, end_index)):
-        result['name'].append(data[i]['name'])
+    for i in tqdm(range(args.start_index, end_index), initial=args.start_index, total=len(data)):
         # final_action = get_final_action(data[i], args)
         case = data[i]
-        agent_prompt = prepare_agent_prompt(
-            prompt_type=args.prompt_type,
-            user_name=case['trajectory']['user_name'],
-            user_email=case['trajectory']['user_email'],
-            user_instruction=case['trajectory']['user_instruction'],
-            toolkits=case['trajectory']['toolkits'],
-            executable_trajectory=case['trajectory']['executable_trajectory'],
-            final_action=case['trajectory']['final_action']
-        )
+        agent_prompt = case['prompt']
 
+        final_actions = []
         if 'gpt' in model_name_or_path.lower():
-            final_action = openai_chat_completion_with_retry(
-                engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
-                max_tokens=400, temperature=0.0)
-            final_action = final_action.choices[0].message['content'].strip()
+            client = OpenAI()
+            for _ in range(n_sample_per_case):
+                resp = client.responses.create(
+                    model=model_name_or_path,   # "gpt-5",
+                    input=agent_prompt,
+                    # seed=random.randint(1, 1_000_000_000),  # new random seed each call
+                )
+                final_action = resp.output_text.strip()
+                final_actions.append(final_action)
         elif 'claude' in model_name_or_path.lower():
             final_action = claude_chat_completion_with_retry(
                 engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
                 max_tokens=400, temperature=0.0)
             final_action = final_action.content[0].text.strip()
-        elif any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen']):
+        elif any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
             inputs = [agent_prompt]
             inputs_in_chat_template = []
             if 'vicuna' in model_name_or_path:
@@ -223,13 +347,149 @@ def  get_final_actions(args, model_name_or_path: str):
                     )
             output = vllm_engine.generate(inputs_in_chat_template, sampling_params)
             # output = vllm_engine.generate(inputs_in_chat_template).generations
-            final_action = output[0].outputs[0].text.strip()
-            # final_action = output[0][0].text.strip()
+            
+            for _n in range(n_sample_per_case):
+                final_action = output[0].outputs[_n].text.strip()
+                # final_action = output[0].outputs[0].text.strip()
+                # final_action = output[0][0].text.strip()
+                final_actions.append(final_action)
         else:
             raise NotImplementedError
         # Post-process the model output.
-        print(final_action) # debug
-        result['final_action'].append(post_process(final_action))
+        # print(final_actions) # debug
+        for _n in range(n_sample_per_case):
+            result['name'].append(case['name'] if 'name' in case else case['id'])
+
+            final_action = final_actions[_n]
+            result['final_action'].append(post_process(final_action))
+    return result
+
+def load_original_data(input_path: str):
+    # Load original data (PrivacyLens)
+    if input_path.endswith('.json'):
+        with open(input_path, 'r') as f:
+            data = json.load(f)
+    elif input_path.endswith('.txt'):
+        with open(input_path, "r", encoding="utf-8") as fin:
+            test_case_names = [line.strip() for line in fin]
+        with open('data/main_data.json', 'r') as f: # TODO
+            original_data = json.load(f)
+        data = []
+        for case in original_data:
+            if case['name'] in test_case_names:
+                data.append(case)
+    else:
+        raise ValueError("Invalid file format.")
+    return data
+
+def get_final_actions(args, model_name_or_path: str, num_case: int, n_sample_per_case: int =1):
+    """
+    Generate final actions for all test cases using the specified model.
+
+    Args:
+        args: Argument namespace with the following attributes:
+            input_path (str): 
+                .json: Path to the JSON data file with agent test cases.
+                .txt: names of test cases
+            output_path (str): Path to save the generated results (not always used here).
+            prompt_type (str): Which prompt template to use ("naive" or "privacy_enhanced").
+            start_index (int): Index in the dataset to start processing (default 0).
+            num (int): Number of cases to process (-1 means all).
+            gpu_num (int): Number of GPUs for model inference (when using vllm).
+            hf_cache_dir (str): HuggingFace cache directory for model/tokenizer.
+            specific_case_name (str): Name of a single case to run (overrides start_index/num if set).
+        model_name_or_path (str): model name or path.
+        n_sample_per_prompt (int): Number of output sequences to return for a given prompt.
+    Return:
+        result: dict. {'name': [], 'final_action': []}
+    """
+    if 'gpt' in model_name_or_path.lower():
+        openai.api_key = os.environ['OPENAI_API_KEY']
+        openai.api_type = os.environ['OPENAI_API_TYPE']
+        if openai.api_type == 'azure':
+            openai.api_base = os.environ['OPENAI_API_BASE']
+            openai.api_version = os.environ['OPENAI_API_VERSION']
+
+    if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
+        if n_sample_per_case == 1:    # n must be 1 when using greedy sampling
+            _T = 0.0
+        else:
+            _T = 1.0
+        sampling_params = SamplingParams(
+            n=n_sample_per_case,
+            temperature=_T,
+            max_tokens=1000,        # corresponds to max_new_tokens
+        )
+        vllm_engine = LLM(
+            model=model_name_or_path,
+            tensor_parallel_size=args.gpu_num,
+            trust_remote_code=True,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            max_num_batched_tokens=16000,
+            # max_num_batched_tokens=2048,  # finish_reason=length
+            download_dir=args.hf_cache_dir
+        )
+        # vllm_engine = VLLM(
+        #     model=model,
+        #     tensor_parallel_size=args.gpu_num,
+        #     trust_remote_code=True,
+        #     gpu_memory_utilization=0.5,
+        #     max_num_batched_tokens=16000,
+        #     max_new_tokens=1000,
+        #     temperature=0,
+        #     download_dir=args.hf_cache_dir,
+        #     # gpu_memory_utilization=0.4,
+        # )
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=args.hf_cache_dir)
+
+    data = load_original_data(args.input_path)
+
+    # Determine start and end indices for processing cases
+    if args.specific_case_name:
+        for i, case in enumerate(data):
+            if case['name'] == args.specific_case_name:
+                args.start_index = i
+                end_index = i + 1
+                break
+        else:
+            raise ValueError(f'Error: The specific case name {args.specific_case_name} is not found.')
+    else:
+        if num_case == -1:
+            end_index = len(data)
+        else:
+            end_index = min(args.start_index + num_case, len(data))
+
+    # Get final actions for cases in original data
+    result = {
+        'name': [],
+        'final_action': [],
+    }
+    for i in tqdm(range(args.start_index, end_index)):
+        # final_action = get_final_action(data[i], args)
+        case = data[i]
+        agent_prompt = prepare_agent_prompt_with_example(
+        # agent_prompt = prepare_agent_prompt(
+            prompt_type=args.prompt_type,
+            user_name=case['trajectory']['user_name'],
+            user_email=case['trajectory']['user_email'],
+            user_instruction=case['trajectory']['user_instruction'],
+            toolkits=case['trajectory']['toolkits'],
+            executable_trajectory=case['trajectory']['executable_trajectory'],
+            final_action=case['trajectory']['final_action']
+        )
+    
+        final_actions = generate_model_response(
+            agent_prompt, model_name_or_path, tokenizer, vllm_engine, sampling_params
+        )
+        
+        # Post-process the model output.
+        # print(final_actions) # debug
+        print(data[i]['name'])
+        for _n in range(n_sample_per_case):
+            result['name'].append(data[i]['name'])
+
+            final_action = final_actions[_n]
+            result['final_action'].append(post_process(final_action))
     return result
 
 def post_process(s):
@@ -257,7 +517,7 @@ def main():
     args = prepare_args()
     load_dotenv()
 
-    result = get_final_actions(args)
+    result = get_final_actions(args, args.model)
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     try:
         pd.DataFrame(result).to_csv(args.output_path, index=False)

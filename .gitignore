@@ -5,6 +5,7 @@ data_pipeline/predictions*
 data_pipeline/pref_pairs
 data_pipeline_MA/predictions*
 data_pipeline_MA/pref_pairs
+data_pipeline_aug/pref_pairs_augmented
 evaluation/.locks
 evaluation/*.lock
 evaluation/models--*
@@ -14,6 +15,7 @@ outputs_test/
 data/main_data_test.json
 data/main_data_train.json
 data/main_data_validation.json
+data/step-dpo
 data_embedding/
 
 # temporarily files

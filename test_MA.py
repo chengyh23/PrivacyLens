@@ -5,6 +5,7 @@ Nov, 2025
 """
 import logging
 import argparse
+from tqdm import tqdm
 import os
 import json
 import pandas as pd
@@ -12,30 +13,16 @@ import numpy as np
 from dotenv import load_dotenv
 from evaluation.get_final_action import get_final_actions
 from evaluation.evaluate_final_action import evaluate_final_actions, calc_eval_metrics
+from evaluation_MA.get_final_action_MA import collect_trajectories
 from huggingface_hub import model_info
 
 logger = logging.getLogger(__name__)
 
-def find_latest_checkpoint(output_dir):
-    if not os.path.exists(output_dir):
-        raise FileNotFoundError(f"Output directory {output_dir} does not exist!")
-    checkpoints = [d for d in os.listdir(output_dir) if d.startswith('checkpoint-')]
-    if not checkpoints:
-        # fallback: maybe files saved directly to output_dir
-        #           e.g., outpur_dir=outputs_test/Meta-Llama-3-8B-Instruct/checkpoint-800
-        return output_dir
-    checkpoints = sorted(checkpoints, key=lambda x: int(x.split('-')[-1]))
-    return os.path.join(output_dir, checkpoints[-1])
+from test import find_latest_checkpoint
+from evaluation_MA.tree_utils import Forest
+from evaluation.evaluate_final_action import evaluate_final_actions_batch
 
-# # TODO to be deleted
-# def calc_leak_rate(eval_output_path):
-#     with open(eval_output_path, "r") as f:
-#         results = json.load(f)
-#     # Format: {name: {"leak_info": bool, ...}, ...}
-#     n_total = len(results)
-#     n_leak = sum(1 for v in results.values() if (isinstance(v, dict) and v.get("leak_info", False)))
-#     leak_rate = n_leak / n_total if n_total > 0 else 0.0
-#     print(f"Leakage rate: {n_leak}/{n_total} = {leak_rate:.3f}")
+
 
 def prepare_args():
     parser = argparse.ArgumentParser()
@@ -58,11 +45,15 @@ def prepare_args():
                         help='The ratio (between 0 and 1) of GPU memory to reserve for the model weights, activations, and KV cache.')
     parser.add_argument('--hf-cache-dir', type=str,
                         help='The cache directory for the Hugging Face model.')
-    parser.add_argument('--pred-model', type=str,
-                        help='The model to use for generating action.')
+    parser.add_argument('--model-generator', type=str, required=True,
+                        help='The model to use for generating action of Generator in the multi-agent system.')
+    parser.add_argument('--model-verifier', type=str, required=True,
+                        help='The model to use for generating action of Verifier in the multi-agent system.')
+    parser.add_argument('--model-refiner', type=str, required=True,
+                        help='The model to use for generating action of Refiner in the multi-agent system.')
     parser.add_argument("--checkpoint_dir", type=str,  
                         help="Path to model outputs/checkpoints")
-    parser.add_argument('--eval-model', type=str,
+    parser.add_argument('--eval-model', type=str, required=True,
                         help='The model to use for evaluating action.')
     parser.add_argument("--eval_result", type=str, default=None, help="Path to eval leakage json file (if already evaluated)")
     parser.add_argument("--eval_final_action_path", type=str, default="evaluation/evaluate_final_action.py", help="Evaluation script")
@@ -80,17 +71,26 @@ def main():
     log_level = logging.INFO
     logger.setLevel(log_level)
 
-    # If eval_model looks like a path with a '/', replace it with outputs_test/ version
-    if args.pred_model is None:
-        raise ValueError("You must specify --pred-model.")
-
-    if not os.path.exists(args.pred_model):
-        pred_model_name_or_path = args.pred_model
-        outputs_test_dir = "outputs_test/" + args.pred_model.split("/", 1)[-1]
+    # TODO how to determine outputs_test_dir?
+    if not os.path.exists(args.model_generator):
+        model_name_or_path_G = args.model_generator
     else:
-        pred_model_name_or_path = find_latest_checkpoint(args.pred_model)
-        outputs_test_dir = pred_model_name_or_path.replace("outputs", "outputs_test")    
-    print(f"Pred using: {pred_model_name_or_path}, output to {outputs_test_dir}")
+        model_name_or_path_G = find_latest_checkpoint(args.model_generator)
+
+    if not os.path.exists(args.model_verifier):
+        model_name_or_path_V = args.model_verifier
+    else:
+        model_name_or_path_V = find_latest_checkpoint(args.model_verifier)
+
+    if not os.path.exists(args.model_refiner):
+        model_name_or_path_R = args.model_refiner
+        outputs_test_dir = "outputs_test/" + args.model_refiner.split("/", 1)[-1]
+    else:
+        model_name_or_path_R = find_latest_checkpoint(args.model_refiner)
+        outputs_test_dir = model_name_or_path_R.replace("outputs", "outputs_test")
+    
+
+    print(f"Pred using: G: {model_name_or_path_G}, V: {model_name_or_path_V}, R: {model_name_or_path_R}. output to {outputs_test_dir}")
     print(f"Eval using: {args.eval_model}")
     
     # info = model_info(args.checkpoint_dir)
@@ -104,16 +104,18 @@ def main():
     #########################
     output_path_actions = os.path.join(output_dir, "actions.csv")
     if not os.path.exists(output_path_actions):
-        result = get_final_actions(args, model_name_or_path=pred_model_name_or_path, num_case=args.num)
+        result = collect_trajectories(
+            args, 
+            model_generator=model_name_or_path_G,
+            model_verifier=model_name_or_path_V,
+            model_refiner=model_name_or_path_R,
+            num_case=args.num, 
+            n_branching=1
+        )
         
         os.makedirs(output_dir, exist_ok=True)
-        try:
-            pd.DataFrame(result).to_csv(output_path_actions, index=False)
-            print(f"Successfully wrote actions to {output_path_actions}")
-        except Exception as e:
-            print(f'Error: {e}')
-            with open(output_path_actions.replace('.csv', 'json'), 'w') as f:
-                json.dump(result, f)
+        result.to_dict(output_path_actions)
+        print(f"Successfully wrote actions to {output_path_actions}")
     else:
         logger.info(f"{output_path_actions} exists, skipping get_final_actions and loading existing results.")
         print(f"{output_path_actions} exists, skipping get_final_actions and loading existing results.")
@@ -124,13 +126,29 @@ def main():
     output_path_eval = os.path.join(output_dir, f"evaluations.json")
     # output_path_eval = os.path.join(output_dir, f"{args.eval_step}.csv")
     if not os.path.exists(output_path_eval):
-        name_to_result = evaluate_final_actions(
+        forest = Forest.from_dict(output_path_actions)
+        actions = []
+        for i_case in tqdm(range(len(forest)), desc="loading actions of all cases", leave=False):
+        # for i_case in tqdm(range(len(data))):
+            # assert forest[i_case].name == f'main{i_case+1}', f"{forest[i_case].name} != main{i_case+1}"
+            leaves = forest[i_case].get_all_leaves()
+            for i in range(len(leaves)):
+                _action = {
+                    'name': forest[i_case].name, 
+                    # 'pred_model': args.model, 
+                    'final_action': leaves[i].output,
+                    'tree_index': leaves[i].tree_index,
+                }
+                actions.append(_action)
+                
+        name_to_result = evaluate_final_actions_batch(
             args, 
             model_name_or_path=args.eval_model, 
             data_path=args.input_path, 
-            actions=output_path_actions,
+            actions=actions,
             step=args.eval_step
         )
+
         with open(output_path_eval, 'w') as f:
             json.dump(name_to_result, f, indent=4)
     else:

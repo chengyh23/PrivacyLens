@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import numpy as np
 
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../")))
 from train import apply_chat_template
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
