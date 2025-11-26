@@ -3,7 +3,6 @@
 # TEST_DATA_PATH=./data/main_data_test.json
 TEST_DATA_PATH=data_pipeline_MA/predictions/Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_empty_cases.txt
 
-
 MODEL_GENERATOR=mistralai/Mistral-7B-Instruct-v0.2
 MODEL_PREFIX=outputs/Mistral-7B-Instruct-v0.2-dpo-Mistral-7B-Instruct-v0.2-branch_4-pref_pairs
 MODEL_VERIFIER=${MODEL_PREFIX}_verifier

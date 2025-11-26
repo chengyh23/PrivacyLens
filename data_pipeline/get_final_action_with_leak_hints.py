@@ -72,45 +72,6 @@ def post_process(s):
         s = s[:s.find('}') + 1]
     return s
 
-def prepare_agent_prompt_with_full_hints(
-        prompt_type,
-        user_name,
-        user_email,
-        user_instruction,
-        toolkits,
-        executable_trajectory,
-        final_action,
-        sensitive_info_items,
-    ):
-    """
-    Constructs an agent prompt using feedback and hints from a leaks entry.
-
-    Args:
-        
-        sensitive_info_items (list of str): A list of 
-            concrete sensitive information strings considered especially 
-            private or confidential for the case.
-            Example:
-                [
-                    "Mr. Smithson is a high-ranking official at Global Trust Bank.",
-                    "Mr. Smithson is accused of embezzling a significant amount of funds.",
-                    "There are questions regarding the reliability of the witnesses and the direct connection of Mr. Smithson to the crime.",
-                    "The defense will challenge the prosecution's case by highlighting these inconsistencies and the absence of concrete evidence directly implicating Mr. Smithson."
-                ]
-        
-    """
-    agent_prompt = prepare_agent_prompt(
-        prompt_type,
-        user_name,
-        user_email,
-        user_instruction,
-        toolkits,
-        executable_trajectory,
-        final_action,
-    )
-    # TODO
-    return agent_prompt
-
 def prepare_agent_prompt_with_feedback_hints(
         prompt_type,
         user_name,

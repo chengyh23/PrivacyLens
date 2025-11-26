@@ -27,11 +27,17 @@ def cartesian_product(pos_set: List[str], neg_set: List[str], label: str, prompt
             }
             prod.append(pair)
     return prod
+
     
-def main(eval_data_path: str, pref_data_path: str, verbose: bool = False):
-
-    data = load_json(eval_data_path)
-
+def gen_pref_pairs(eval_data_path: str | List[str], pref_data_path: str, verbose: bool = False):
+    print(eval_data_path)
+    if isinstance(eval_data_path, str):
+        data = load_json(eval_data_path)
+    else:   # List[str]
+        data = []
+        for fpath in eval_data_path:
+            _data = load_json(fpath)
+            data += _data
     # Iterate over the data to get start and end indices for each 'name' (mainX)
     name_indices = defaultdict(list)
     for idx, entry in enumerate(data):
@@ -40,6 +46,8 @@ def main(eval_data_path: str, pref_data_path: str, verbose: bool = False):
     # Generate preference pairs and test cases respectively
     pref_pairs = []
     test_case_names = []
+    normal_case_name = []
+    hard_case_name, easy_case_name = [], []
     for name, indices in name_indices.items():
         pos_actions, neg_actions = [], []
         for index in indices:
@@ -52,8 +60,15 @@ def main(eval_data_path: str, pref_data_path: str, verbose: bool = False):
                 pos_actions.append(entry["final_action"])
         case_pref_pairs = cartesian_product(pos_actions, neg_actions, name)
         
+        if len(neg_actions) == 0:
+            easy_case_name.append(name)
+        elif len(pos_actions) == 0:
+            hard_case_name.append(name)
+
         if len(case_pref_pairs)==0:
             test_case_names.append(name)
+        else:
+            normal_case_name.append(name)
         if verbose:
             print(f'{name}: {len(pos_actions):<2} x {len(neg_actions):<2} = {len(case_pref_pairs):<4}')
         pref_pairs += case_pref_pairs
@@ -68,15 +83,19 @@ def main(eval_data_path: str, pref_data_path: str, verbose: bool = False):
         with open(pref_data_path, "w", encoding="utf-8") as fout:
             json.dump(pref_pairs, fout, indent=2, ensure_ascii=False)
     
-    # Save test cases
-    test_case_path = os.path.splitext(pref_data_path)[0] + "_empty_cases.txt"
-    if os.path.exists(test_case_path):
-        print(f"Already exists: {test_case_path}\n(Total # test cases: {len(test_case_names)})")
-    else:
-        with open(test_case_path, "w", encoding="utf-8") as fout:
-            for name in test_case_names:
-                fout.write(f"{name}\n")
-        print(f"Wrote out test cases' names to {test_case_path}")
+    # # Save test cases
+    # test_case_path = os.path.splitext(pref_data_path)[0] + "_empty_cases.txt"
+    # if os.path.exists(test_case_path):
+    #     print(f"Already exists: {test_case_path}\n(Total # test cases: {len(test_case_names)})")
+    # else:
+    #     with open(test_case_path, "w", encoding="utf-8") as fout:
+    #         for name in test_case_names:
+    #             fout.write(f"{name}\n")
+    #     print(f"Wrote out test cases' names to {test_case_path}")
+    print("Summary:")
+    print("- Normal case:", normal_case_name)
+    print("- Hard case:", hard_case_name)
+    print("- Easy case:", easy_case_name)
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -85,11 +104,12 @@ def parse_args():
     parser.add_argument(
         "--eval-data-path",
         required=True,
-        help="Path to the evaluation data JSON file.",
+        nargs='+',
+        help="One or more paths to the evaluation data JSON file(s).",
     )
     parser.add_argument(
         "--pref-data-path",
-        default="data_pipeline/pref_pairs_augmented/preference_pairs-Mistral-7B-Instruct-v0.3-10.json",
+        required=True,
         help="Destination path for the generated preference pairs JSON file.",
     )
     parser.add_argument(
@@ -102,4 +122,4 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    main(args.eval_data_path, args.pref_data_path, args.verbose)
+    gen_pref_pairs(args.eval_data_path, args.pref_data_path, args.verbose)

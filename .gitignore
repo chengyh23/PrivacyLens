@@ -6,6 +6,7 @@ data_pipeline/pref_pairs
 data_pipeline_MA/predictions*
 data_pipeline_MA/pref_pairs
 data_pipeline_aug/pref_pairs_augmented
+data_pipeline_aug/pref_pairs_iterative
 evaluation/.locks
 evaluation/*.lock
 evaluation/models--*

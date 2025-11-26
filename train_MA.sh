@@ -14,13 +14,13 @@ if [[ "${ROLE}" != "verifier" && "${ROLE}" != "refiner" ]]; then
     exit 1
 fi
 
-DATA_PATH=data_pipeline_MA/predictions/Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_${ROLE}.json
-MODEL_NAME_OR_PATH=mistralai/Mistral-7B-Instruct-v0.2
-MODEL_ID=Mistral-7B-Instruct-v0.2-dpo-Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_${ROLE}
+DATA_PATH=data_pipeline_MA/predictions/Llama-3.1-8B-Instruct-branch_4-pref_pairs_${ROLE}.json
+MODEL_NAME_OR_PATH=meta-llama/Llama-3.1-8B-Instruct
+MODEL_ID=Llama-3.1-8B-Instruct-dpo-Llama-3.1-8B-Instruct-branch_4-pref_pairs_${ROLE}
 
 OUTPUT_DIR_ROOT=outputs # TODO outputs_MA
 
-ACCELERATE_LOG_LEVEL=info accelerate launch --gpu_ids 0 --config_file accelerate_configs/deepspeed_zero3_cpu.yaml --mixed_precision bf16 \
+ACCELERATE_LOG_LEVEL=info accelerate launch --gpu_ids 4 --config_file accelerate_configs/deepspeed_zero3_cpu.yaml --mixed_precision bf16 \
     --num_processes 1 \
     train.py \
     --do_train \
