@@ -1,15 +1,15 @@
 
 # Multi-Agent Data Pipeline Script
 
-START_STEP=4
+START_STEP=1
 
-MODEL=mistralai/Mistral-7B-Instruct-v0.2
+MODEL=meta-llama/Llama-3.1-8B-Instruct
 MODEL_GENERATOR=${MODEL}
 MODEL_VERIFIER=${MODEL}
 MODEL_REFINER=${MODEL}
-PRED_MODEL_ID=Mistral-7B-Instruct-v0.2
+PRED_MODEL_ID=Llama-3.1-8B-Instruct
 
-N_BRANCHING=4
+N_BRANCHING=5
 EVAL_STEP='judge_leakage'   # 'helpfulness'
 EVAL_MODEL=mistralai/Mistral-7B-Instruct-v0.2
 
@@ -22,6 +22,7 @@ PREF_DATA_PATH_VERIFIER="data_pipeline_MA/predictions/${NAME}-pref_pairs_verifie
 PREF_DATA_PATH_REFINER="data_pipeline_MA/predictions/${NAME}-pref_pairs_refiner.json"
 
 
+# DATASET_PATH='./data/main_data.json'
 DATASET_PATH='./data/main_data.json'
 HF_CACHE_DIR='./evaluation'
 # HF_CACHE_DIR='~/.cache/huggingface'
@@ -40,13 +41,13 @@ if [ $START_STEP -le 1 ]; then
       --output-path $ACTION_PATH \
       --prompt-type $PROMPT_TYPE \
       --start-index 0 \
-      --num-case -1 \
+      --num-case 20 \
       --n $N_BRANCHING \
       --model-generator ${MODEL_GENERATOR} \
       --model-verifier ${MODEL_VERIFIER} \
       --model-refiner ${MODEL_REFINER} \
       --gpu-num 1 \
-      --gpu-memory-utilization 0.5 \
+      --gpu-memory-utilization 0.6 \
       --output-tree-format nested
     echo "Step 1 completed."
     echo ""
@@ -69,7 +70,7 @@ if [ $START_STEP -le 2 ]; then
     echo "Step 2 completed."
     echo ""
 fi
-
+exit
 # ----- Step 3: Reward Shaping -----
 if [ $START_STEP -le 3 ]; then
 

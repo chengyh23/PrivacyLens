@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from tqdm import tqdm
 import pandas as pd
+import torch
 
 from dotenv import load_dotenv
 
@@ -76,10 +77,12 @@ REFINEMENT_PROMPT_TMPL = (
     
 #     return post_process(resp)   # TODO
 
-def collect_trajectories_batch(args, num_case: int, n_branching: int):
+def collect_trajectories_batch(args, model_generator: str, model_verifier: str, model_refiner: str, num_case: int, n_branching: int, output_tree_format: str = 'nested'):
     """
     get_final_actions_MA
 
+    Return:
+        forest: Forest
     """
     vllm_engines = {}
     tokenizers = {}
@@ -89,7 +92,7 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         Returns VLLM engine and tokenizer for the specified model.
         Initializes and caches if not already present.
         """
-        if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna']):
+        if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
             if model_name_or_path not in vllm_engines:
                 vllm_engines[model_name_or_path] = LLM(
                     model=model_name_or_path,
@@ -104,7 +107,6 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         else:
             raise NotImplementedError(f"Unsupported model: {model_name_or_path}")
 
-
     # Prepare engines/tokenizers as needed
     if n_branching == 1:    # n must be 1 when using greedy sampling
         _T = 0.0
@@ -115,14 +117,9 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         temperature=_T,
         max_tokens=1000,        # corresponds to max_new_tokens
     )
-    gen_vllm, gen_tok = get_engine_and_tokenizer(args.model_generator)
-    ver_vllm, ver_tok = get_engine_and_tokenizer(args.model_verifier)
-    ref_vllm, ref_tok = get_engine_and_tokenizer(args.model_refiner)
 
     # Load origianl data (PrivacyLens)
-    with open(args.input_path, "r") as f:
-        data = json.load(f)
-
+    data = load_original_data(args.input_path)
 
     # Determine start and end indices for processing cases
     if args.specific_case_name:
@@ -146,13 +143,12 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
     # g_prompt <- context
     #############################
     generator_prompt_batch = []
-    for idx in tqdm(range(args.start_index, end_index)):
+    for idx in range(args.start_index, end_index):
         case = data[idx]
         name = case['name']
         sensitive_items = case['trajectory']["sensitive_info_items"]
         
         agent_prompt = prepare_agent_prompt_with_example(
-        # agent_prompt = prepare_agent_prompt(
             prompt_type=args.prompt_type,
             user_name=case['trajectory']['user_name'],
             user_email=case['trajectory']['user_email'],
@@ -176,8 +172,23 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         forest.append(tree)
 
         generator_prompt_batch.append(generator_prompt)
-    g_responses_batch = generate_model_response(generator_prompt_batch, args.model_generator, tokenizer=gen_tok, vllm_engine=gen_vllm, sampling_params=sampling_params)
-    
+
+    gen_vllm, gen_tok = get_engine_and_tokenizer(model_generator)
+    # Generate: GENERATOR
+    g_responses_batch = generate_model_response(
+        generator_prompt_batch,
+        model_generator,
+        tokenizer=gen_tok,
+        vllm_engine=gen_vllm,
+        sampling_params=sampling_params
+    )
+    # Clear cache *after* generator step iff the next model is not the same engine
+    if not (model_generator == model_verifier or model_generator == model_refiner):
+        del gen_vllm.llm_engine
+        del gen_vllm
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+
     #############################
     # Generators produce Verifiers
     # v_prompt <- context + g_response
@@ -186,7 +197,6 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
     for idx in tqdm(range(args.start_index, end_index)):
         case = data[idx]
         agent_prompt = prepare_agent_prompt_with_example(
-        # agent_prompt = prepare_agent_prompt(
             prompt_type=args.prompt_type,
             user_name=case['trajectory']['user_name'],
             user_email=case['trajectory']['user_email'],
@@ -197,7 +207,6 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         )
         context = agent_prompt
 
-        # tree = forest[idx]
         root = forest[idx].root
         
         g_responses = g_responses_batch[idx]
@@ -215,8 +224,22 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
             v_prompt = f"{context}{VERIFIER_PROMPT_TMPL.format(GENERATOR_ANSWER=g_response)}"
             
             v_prompt_batch.append(v_prompt)
-    v_responses_batch = generate_model_response(v_prompt_batch, args.model_verifier, tokenizer=ver_tok, vllm_engine=ver_vllm, sampling_params=sampling_params)
     
+    ver_vllm, ver_tok = get_engine_and_tokenizer(model_verifier)
+    v_responses_batch = generate_model_response(
+        v_prompt_batch,
+        model_verifier,
+        tokenizer=ver_tok,
+        vllm_engine=ver_vllm,
+        sampling_params=sampling_params
+    )
+    # Clear cache after verifier step iff refiner doesn't reuse this engine
+    if not (model_verifier == model_refiner):
+        del ver_vllm.llm_engine
+        del ver_vllm
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+
     #############################
     # Verifiers produce Refiners
     # r_prompt <- context + g_response + v_response
@@ -225,7 +248,6 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
     for idx in tqdm(range(args.start_index, end_index)):
         case = data[idx]
         agent_prompt = prepare_agent_prompt_with_example(
-        # agent_prompt = prepare_agent_prompt(
             prompt_type=args.prompt_type,
             user_name=case['trajectory']['user_name'],
             user_email=case['trajectory']['user_email'],
@@ -238,7 +260,6 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
         g_responses = g_responses_batch[idx]
         for i in range(n_branching):
             g_response = g_responses[i]
-            # generator_node = tree.children[i]
             generator_node = forest[idx].root.children[i]
             # generator_node = forest[idx].get_node_by_index([i]) # TODO node_index VS index by id
 
@@ -256,7 +277,13 @@ def collect_trajectories_batch(args, num_case: int, n_branching: int):
                 # Generate refiner output
                 r_prompt = f"{context}{REFINEMENT_PROMPT_TMPL.format(GENERATOR_ANSWER=g_response, VERIFIER_ANSWER=v_response)}"
                 r_prompt_batch.append(r_prompt)
-    r_responses_batch = generate_model_response(r_prompt_batch, args.model_refiner, tokenizer=ref_tok, vllm_engine=ref_vllm, sampling_params=sampling_params)
+    ref_vllm, ref_tok = get_engine_and_tokenizer(model_refiner)
+    r_responses_batch = generate_model_response(r_prompt_batch, model_refiner, tokenizer=ref_tok, vllm_engine=ref_vllm, sampling_params=sampling_params)
+    # Clear cache
+    del ref_vllm.llm_engine
+    del ref_vllm
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
 
     for idx in tqdm(range(args.start_index, end_index)):
         tree = forest[idx]
@@ -491,7 +518,12 @@ def main():
 
     forest = collect_trajectories_batch(
     # forest = collect_trajectories(
-        args, args.output_path, args.num_case
+        args, 
+        args.model_generator,
+        args.model_verifier,
+        args.model_refiner,
+        args.num_case,
+        args.n,
     )
     
     # Write output

@@ -150,7 +150,7 @@ def main():
 
     if os.path.exists(args.output_path):
         print(f"Skipping evaluation: {args.output_path} already exists. ")
-        calc_eval_metrics(args.output_path, step=['judge_leakage'])
+        calc_eval_metrics(args.output_path, eval_step=['judge_leakage'])
         return
 
     # Load actions from JSON file
@@ -192,7 +192,7 @@ def main():
         json.dump(name_and_result, f, indent=4)
         print("Evaluation complete. Results written to", args.output_path)
     
-    calc_eval_metrics(args.output_path, step=['judge_leakage'])
+    calc_eval_metrics(args.output_path, eval_step=['judge_leakage'])
 
     # vllm_engine = VLLM(
     #     model=args.model,

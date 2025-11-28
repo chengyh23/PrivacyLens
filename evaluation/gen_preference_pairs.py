@@ -93,9 +93,9 @@ def gen_pref_pairs(eval_data_path: str | List[str], pref_data_path: str, verbose
     #             fout.write(f"{name}\n")
     #     print(f"Wrote out test cases' names to {test_case_path}")
     print("Summary:")
-    print("- Normal case:", normal_case_name)
-    print("- Hard case:", hard_case_name)
-    print("- Easy case:", easy_case_name)
+    print("- Normal case:", len(normal_case_name))
+    print("- Hard case:", len(hard_case_name))
+    print("- Easy case:", len(easy_case_name))
 
 def parse_args():
     parser = argparse.ArgumentParser(

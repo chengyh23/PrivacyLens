@@ -139,4 +139,16 @@ def main():
     calc_eval_metrics(output_path_eval, args.eval_step, verbose=False)
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    # calc_leak_rates("data_pipeline/pref_pairs_augmented/train_aug_eval-Mistral-7B-Instruct-v0.3-ALL.json")
+    # summarize_leak_rates("data_pipeline/pref_pairs_augmented")
+    # evals = ["outputs_test/Meta-Llama-3-8B-Instruct/predictions/evaluations.csv", "outputs_test/Meta-Llama-3-8B-Instruct-dpo-preference_pairs-Meta-Llama-3-8B-Instruct-10/checkpoint-1000/predictions/evaluations.csv"]
+    # evals = ["outputs_test/Mistral-7B-Instruct-v0.3/predictions/evaluations.csv", "outputs_test/Mistral-7B-Instruct-v0.3-dpo-preference_pairs-Mistral-7B-Instruct-v0.3-10/checkpoint-1400/predictions/evaluations.csv"]
+    # calc_eval_metrics(evals)
+    
+    from evaluation.evaluate_final_action import check_action_validity_for_predictions
+    for action_path in [
+        "data_pipeline_aug/pref_pairs_augmented/train_aug-Mistral-7B-Instruct-v0.3-10.json",
+        "data_pipeline_aug/pref_pairs_augmented/train_aug-Meta-Llama-3-8B-Instruct-10.json"]:
+        check_action_validity_for_predictions(action_path)

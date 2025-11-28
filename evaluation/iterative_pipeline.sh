@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=2
 
 if [ $START_STEP -le 1 ]; then
     CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES \
-    python data_pipeline_aug/iterative_sample_and_eval.py \
+    python evaluation/iterative_sample_and_eval.py \
         --input-path ${DATASET_PATH} \
         --output-path ${JUDGE_PATH} \
         --pred-model ${PRED_MODEL} \

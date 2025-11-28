@@ -1,3 +1,8 @@
+"""
+get_final_actions*
+    -> prepare_agent_prompt*
+    -> generate_model_response
+"""
 import argparse
 import json
 import os
@@ -26,14 +31,14 @@ sys.path.append(str((script_dir / "../data_construction").resolve()))
 # sys.path.append('../data_construction')
 
 from toolemu.prompts.agent import *
-from toolemu.tools import get_toolkits_by_names
+from toolemu.tools import get_toolkits_by_names, get_tool_class_by_name
 
 sys.path.append(str((script_dir / "../helper").resolve()))
 # sys.path.append('../helper')
 from utils import openai_chat_completion_with_retry, print_api_usage, claude_chat_completion_with_retry
 # from utils import openai_chat_completion_with_retry, print_api_usage, VLLM, claude_chat_completion_with_retry
-from vllm import LLM, SamplingParams, StructuredOutputsParams
-# from langchain_community.llms import VLLM
+from vllm import LLM, SamplingParams
+from vllm.sampling_params import StructuredOutputsParams
 from openai import OpenAI
 
 
@@ -57,15 +62,7 @@ PROMPT_RESPONSE_FORMAT = (
     "\n---\n"
 )
 
-class ActionOutput(BaseModel):
-    thought: str
-    action: str
-    action_input: dict
 
-class ActionOutputFixed(BaseModel):
-    thought: str
-    action: str = Field(..., const=True)
-    action_input: dict
 
 def prepare_agent_prompt_with_full_hints(
         prompt_type,
@@ -238,7 +235,6 @@ def generate_model_response(agent_prompt, model_name_or_path, tokenizer, vllm_en
     """
     # generat model response
     final_actions_batch = []
-    # final_actions = []
     if 'gpt' in model_name_or_path.lower() or 'claude' in model_name_or_path.lower():
         # final_action = openai_chat_completion_with_retry(
         #     engine=model_name_or_path, messages=[{'role': 'user', 'content': agent_prompt}],
@@ -557,6 +553,100 @@ def get_final_actions_batch(args, prepare_prompt_func, model_name_or_path: str, 
             result['final_action'].append(post_process(final_action))
     return result
 
+
+def get_final_actions_structured(args, model_name_or_path: str, num_case: int, n_sample_per_case: int =1):
+    if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
+        vllm_engine = LLM(
+            model=model_name_or_path,
+            tensor_parallel_size=args.gpu_num,
+            trust_remote_code=True,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            max_num_batched_tokens=16000,
+            # max_num_batched_tokens=2048,  # finish_reason=length
+            download_dir=args.hf_cache_dir
+        )
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=args.hf_cache_dir)
+
+    data = load_original_data(args.input_path)
+
+    # Determine start and end indices for processing cases
+    if args.specific_case_name:
+        for i, case in enumerate(data):
+            if case['name'] == args.specific_case_name:
+                args.start_index = i
+                end_index = i + 1
+                break
+        raise ValueError(f'Error: The specific case name {args.specific_case_name} is not found.')
+    else:
+        if num_case == -1:
+            end_index = len(data)
+        else:
+            end_index = min(args.start_index + num_case, len(data))
+
+    # Get final actions for cases in original data
+    result = {
+        'name': [],
+        'final_action': [],
+    }
+    for i in tqdm(range(args.start_index, end_index)):
+        case = data[i]
+        # Prepare SamplingParams, vllm_engine, and tokenizer
+        if any(x in model_name_or_path.lower() for x in ['mistral', 'llama', 'zephyr', 'vicuna', 'qwen', 'gemma']):
+            if n_sample_per_case == 1:    # n must be 1 when using greedy sampling
+                _T = 0.0
+            else:
+                _T = 1.0
+
+            # json_schema = ActionOutputFixed.model_json_schema()
+            # json_schema['properties']['action']['const'] = case['trajectory']['final_action']
+            def get_schema_for_tool(toolkits_names, tool_name: str) -> BaseModel:
+                toolkits = get_toolkits_by_names(toolkits_names)
+                tool = get_tool_class_by_name(toolkits, tool_name)
+                input_schema = tool.get_input_schema()
+                
+                from typing import Literal
+                class ActionOutput(BaseModel):
+                    thought: str
+                    action: Literal[tool.name]
+                    action_input: input_schema
+                return ActionOutput
+            schema_model = get_schema_for_tool(case['trajectory']['toolkits'], case['trajectory']['final_action'])
+            json_schema = schema_model.model_json_schema()
+            structured_outputs_params = StructuredOutputsParams(json=json_schema)
+            # print('\n', structured_outputs_params, '\n')
+
+            sampling_params = SamplingParams(
+                n=n_sample_per_case,
+                temperature=_T,
+                max_tokens=1000,        # corresponds to max_new_tokens
+                structured_outputs=structured_outputs_params,
+            )
+        # Prepare prompt
+        agent_prompt = prepare_agent_prompt_with_example(
+            prompt_type=args.prompt_type,
+            user_name=case['trajectory']['user_name'],
+            user_email=case['trajectory']['user_email'],
+            user_instruction=case['trajectory']['user_instruction'],
+            toolkits=case['trajectory']['toolkits'],
+            executable_trajectory=case['trajectory']['executable_trajectory'],
+            final_action=case['trajectory']['final_action']
+        )
+    
+        final_actions = generate_model_response(
+            agent_prompt, model_name_or_path, tokenizer, vllm_engine, sampling_params
+        )
+
+        # Post-process the model output.
+        # print(final_actions) # debug
+        print(data[i]['name'])
+        for _n in range(n_sample_per_case):
+            result['name'].append(data[i]['name'])
+
+            final_action = final_actions[_n]
+            result['final_action'].append(post_process(final_action))
+    return result
+
 def get_final_actions(args, model_name_or_path: str, num_case: int, n_sample_per_case: int =1):
     """
     Generate final actions for all test cases using the specified model.
@@ -590,15 +680,10 @@ def get_final_actions(args, model_name_or_path: str, num_case: int, n_sample_per
             _T = 0.0
         else:
             _T = 1.0
-
-        json_schema = ActionOutputFixed.model_json_schema()
-        json_schema['properties']['action']['const'] = case['trajectory']['final_action']
-        structured_outputs_params = StructuredOutputsParams(json_schema=json_schema)
         sampling_params = SamplingParams(
             n=n_sample_per_case,
             temperature=_T,
             max_tokens=1000,        # corresponds to max_new_tokens
-            structured_outputs=structured_outputs_params,
         )
         vllm_engine = LLM(
             model=model_name_or_path,
@@ -676,6 +761,23 @@ def post_process(s):
     return s
 
 
+def print_action_counts_by_id(json_path):
+    """
+    Reads the data at `json_path` and prints a count of actions/entries for each unique id ("mainxx").
+    """
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    id_counts = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        _id = entry.get('id', None)
+        if _id is not None:
+            id_counts[_id] = id_counts.get(_id, 0) + 1
+    for _id, count in sorted(id_counts.items()):
+        print(f"id: {_id}  count: {count}")
+
+
 def prepare_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input-path', type=str, required=True,
@@ -684,15 +786,17 @@ def prepare_args():
                         help='Path to save the probing results in csv format.')
     parser.add_argument('--start-index', type=int, default=0,
                         help='Start index of the cases to evaluate.')
-    parser.add_argument('--num', type=int, default=1,
+    parser.add_argument('--num-case', type=int, default=1,
                         help='Number of cases to evaluate. If -1, evaluate all remaining cases.')
     parser.add_argument('--specific-case-name', type=str, default=None,
                         help='If not None, only evaluate the case with the given name.')
     parser.add_argument('--prompt-type', type=str,
                         choices=['naive', 'privacy_enhanced', 'conservative', 'reckless'],
                         help='The type of the prompt to use for the agent.')
-    parser.add_argument('--model', type=str, required=True,
-                        help='The model to use for the agent.')
+    parser.add_argument('--pred-model', type=str, default=None,
+                        help='The model to use for generating action (alternative to --model).')
+    parser.add_argument('--n-sample-per-case', type=int, default=1,
+                        help='Number of generations per case.')
     parser.add_argument('--gpu-num', type=int, default=1,
                         help='Number of GPUs to use for VLLM.')
     parser.add_argument('--gpu-memory-utilization', type=float, default=0.9,
@@ -712,14 +816,41 @@ def main():
     args = prepare_args()
     load_dotenv()
 
-    result = get_final_actions(args, args.model)
-    os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
-    try:
-        pd.DataFrame(result).to_csv(args.output_path, index=False)
-    except Exception as e:
-        print(f'Error: {e}')
-        with open(args.output_path.replace('.csv', 'json'), 'w') as f:
-            json.dump(result, f)
+    start = args.start_index    
+    
+    if not os.path.exists(args.output_path):
+        generations = get_final_actions_structured(
+        # generations = get_final_actions(
+        # generations = get_final_actions_aug(
+            args, 
+            model_name_or_path=args.pred_model, 
+            num_case=args.num_case,
+            n_sample_per_case=args.n_sample_per_case
+        )
+        # print(generations)    # debug
+
+
+        # Store id and generations for each case
+        names, final_actions = generations['name'], generations['final_action']
+        aug_cases = []
+        for name, action in zip(names, final_actions):
+            aug_cases.append({
+                "id": name,
+                "pred_model": args.pred_model,
+                "final_action": action
+            })
+
+        with open(args.output_path, "w", encoding="utf-8") as f:
+            json.dump(aug_cases, f, indent=2, ensure_ascii=False)
+            print(f"Augmented samples written to {args.output_path} ({len(aug_cases)} cases).")
+        # # SAVE TO CSV
+        # try:
+        #     pd.DataFrame(result).to_csv(args.output_path, index=False)
+        # except Exception as e:
+        #     print(f'Error: {e}')
+    else:
+        print(f"{args.output_path} exists, skipping get_final_actions and loading existing results.")
+
 
 
 if __name__ == '__main__':

@@ -9,12 +9,21 @@ from tree_utils import TreeNode, MultiAgentTree, Forest
 
 def reward_model(eval_result):
     """
+    R=1.0 if preserved
+    R=0.0 if leaked
+
     Params:
         eval_result (dict):
             'leak_info': <bool>
             'secrete_jedgment': <>
     """
-    return 1.0 if eval_result['leak_info'] else 0.0
+    if eval_result['leak_info'] is False:
+        R = 1.0
+    elif eval_result['leak_info'] is True:
+        R = 0.0
+    else:
+        raise ValueError
+    return R
 
 def build_leaf_reward_map(flat_judgments):
     r"""

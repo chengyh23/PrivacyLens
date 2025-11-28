@@ -2,7 +2,7 @@ export MODEL='mistralai/Mistral-7B-Instruct-v0.2'
 # export MODEL='mistralai/Mixtral-8x7B-Instruct-v0.1'
 # MODEL='Qwen/Qwen2-7B-Instruct'
 # export MODEL_PATH='/home/yc714/dataset/pretrained-models/Qwen2-7B-Instruct'
-export PRED_PATH='./data_pipeline/predictions/Mistral-7B-Instruct-v0.2'
+export PRED_PATH='./data_pipeline/predictions/Mistral-7B-Instruct-v0.2-tmp'
 
 export EVAL_PROMPT='qwen2-boxed-step'
 

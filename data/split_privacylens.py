@@ -63,7 +63,32 @@ def split_privacylens(json_path, out_prefix="main_data", split_ratio=[0.8, 0.1, 
           + (f", {out_prefix}_val.json" if n == 3 else "")
           + f", {out_prefix}_test.json")
 
+def split_pref_pairs(pairs_json_path, train_json_path = "data/main_data_train.json"):
+    # Get all case names 'mainX' in main_data_train.json
+    with open(train_json_path, "r", encoding="utf-8") as f:
+        train_data = json.load(f)
+    train_case_names = [case["name"] for case in train_data]
+    print(f"Case names in main_data_train.json: count: {len(train_case_names)}")
+
+    # Filter entries from @Mistral-7B-Instruct-v0.2-branch_2-pref_pairs_refiner.json whose 'name' is in train_case_names
+    with open(pairs_json_path, "r", encoding="utf-8") as f:
+        pairs_data = json.load(f)
+    filtered_pairs = [entry for entry in pairs_data if entry["name"] in train_case_names]
+
+    # Write filtered entries to a new file
+    out_filtered_path = pairs_json_path.replace(".json", ".train.json")
+    if os.path.exists(out_filtered_path):
+        print(f"{out_filtered_path} already exists, skipping writing filtered pairs.")
+    else:
+        with open(out_filtered_path, "w", encoding="utf-8") as f:
+            json.dump(filtered_pairs, f, ensure_ascii=False, indent=2)
+    print(f"Wrote filtered pairs to {out_filtered_path}, count: {len(filtered_pairs)}")
 
 
 if __name__ == "__main__":
-    split_privacylens("data/main_data.json", split_ratio=[0.8,0.2])
+    # split_privacylens("data/main_data.json", split_ratio=[0.8,0.2])
+
+    for pref_pairs_fpath in [
+        "data_pipeline_MA/predictions/Llama-3.1-8B-Instruct-branch_4-pref_pairs_refiner.json", 
+        "data_pipeline_MA/predictions/Llama-3.1-8B-Instruct-branch_4-pref_pairs_verifier.json"]:
+        split_pref_pairs(pref_pairs_fpath)

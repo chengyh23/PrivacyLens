@@ -13,7 +13,7 @@ import numpy as np
 from dotenv import load_dotenv
 from evaluation.get_final_action import get_final_actions
 from evaluation.evaluate_final_action import evaluate_final_actions, calc_eval_metrics
-from evaluation_MA.get_final_action_MA import collect_trajectories
+from evaluation_MA.get_final_action_MA import collect_trajectories, collect_trajectories_batch
 from huggingface_hub import model_info
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 from test import find_latest_checkpoint
 from evaluation_MA.tree_utils import Forest
 from evaluation.evaluate_final_action import evaluate_final_actions_batch
+from evaluation.evaluate_final_action import check_action_validity_for_predictions
 
 
 
@@ -102,9 +103,9 @@ def main():
     #########################
     # Get final action
     #########################
-    output_path_actions = os.path.join(output_dir, "actions.csv")
+    output_path_actions = os.path.join(output_dir, "actions.json")
     if not os.path.exists(output_path_actions):
-        result = collect_trajectories(
+        result = collect_trajectories_batch(
             args, 
             model_generator=model_name_or_path_G,
             model_verifier=model_name_or_path_V,
@@ -155,6 +156,27 @@ def main():
         print(f"{output_path_eval} exists, skipping evaluate_final_actions and loading existing results.")
     
     calc_eval_metrics(output_path_eval, args.eval_step, verbose=False)
+    check_action_validity_for_predictions(output_path_eval)
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    # # calc_leak_rates("data_pipeline/pref_pairs_augmented/train_aug_eval-Mistral-7B-Instruct-v0.3-ALL.json")
+    # # summarize_leak_rates("data_pipeline/pref_pairs_augmented")
+    # # evals = ["outputs_test/Meta-Llama-3-8B-Instruct/predictions/evaluations.csv", "outputs_test/Meta-Llama-3-8B-Instruct-dpo-preference_pairs-Meta-Llama-3-8B-Instruct-10/checkpoint-1000/predictions/evaluations.csv"]
+    
+    evals = [
+        "outputs_test/Mistral-7B-Instruct-v0.2/predictions/evaluations.json",
+        "outputs_test/Mistral-7B-Instruct-v0.2-dpo-Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_refiner/checkpoint-200/predictions/evaluations.json",
+        "outputs_test/Llama-3.1-8B-Instruct/predictions.Nov27/evaluations.json",
+        "outputs_test/Llama-3.1-8B-Instruct-dpo-Llama-3.1-8B-Instruct-branch_4-pref_pairs_refiner/checkpoint-200/predictions/evaluations.json",
+    ]
+    action_paths = [
+        # "data_pipeline_MA/predictions/Mistral-7B-Instruct-v0.2-branch_4-judgment.json",
+        # "data_pipeline_MA/predictions/Llama-3.1-8B-Instruct-branch_4-judgment.json",
+        # "data_pipeline_MA/predictions/Qwen3-4B-Instruct-2507-branch_4-judgment.json",
+        "data_pipeline_MA/predictions/Llama-3.1-8B-Instruct-branch_5-judgment.json"
+    ]
+    # calc_eval_metrics(evals, ['judge_leakage'])
+    for fpath in action_paths:
+        check_action_validity_for_predictions(fpath)

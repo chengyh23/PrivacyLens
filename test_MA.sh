@@ -1,15 +1,17 @@
 #!/bin/bash
 
-# TEST_DATA_PATH=./data/main_data_test.json
-TEST_DATA_PATH=data_pipeline_MA/predictions/Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_empty_cases.txt
+TEST_DATA_PATH=data/main_data_test.json
+# TEST_DATA_PATH=data_pipeline_MA/predictions/Mistral-7B-Instruct-v0.2-branch_4-pref_pairs_empty_cases.txt
 
+# MODEL_GENERATOR=meta-llama/Llama-3.1-8B-Instruct
+# MODEL_PREFIX=outputs/Llama-3.1-8B-Instruct-dpo-Llama-3.1-8B-Instruct-branch_4-pref_pairs
 MODEL_GENERATOR=mistralai/Mistral-7B-Instruct-v0.2
 MODEL_PREFIX=outputs/Mistral-7B-Instruct-v0.2-dpo-Mistral-7B-Instruct-v0.2-branch_4-pref_pairs
 MODEL_VERIFIER=${MODEL_PREFIX}_verifier
-MODEL_REFINER=${MODEL_PREFIX}_refiner
+MODEL_REFINER=${MODEL_PREFIX}_refiner/checkpoint-200
 
 EVAL_MODEL=mistralai/Mistral-7B-Instruct-v0.2
-EVAL_STEP=("judge_leakage" "helpfulness")
+EVAL_STEP=("judge_leakage") # "helpfulness"
 
 
 # for PRED_MODEL in "${PRED_MODELS[@]}"; do
@@ -28,7 +30,7 @@ EVAL_STEP=("judge_leakage" "helpfulness")
 #         # --hub_model_id=qwen2-72b-instruct-step-dpo \
 # done
 
-CUDA_VISIBLE_DEVICES=2 python test_MA.py \
+CUDA_VISIBLE_DEVICES=1 python test_MA.py \
     --input-path ${TEST_DATA_PATH} \
     --num -1 \
     --prompt-type naive \
@@ -37,6 +39,6 @@ CUDA_VISIBLE_DEVICES=2 python test_MA.py \
     --model-verifier ${MODEL_VERIFIER} \
     --model-refiner ${MODEL_REFINER} \
     --eval-model ${EVAL_MODEL} \
-    --gpu-memory-utilization 0.3 \
+    --gpu-memory-utilization 0.5 \
     --gpu-num 1 \
     # --output-tree-format nested

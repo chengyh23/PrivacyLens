@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from tree_utils import TreeNode, MultiAgentTree, build_tree_from_flat_data, Forest
 from get_final_action_MA import VERIFIER_PROMPT_TMPL, REFINEMENT_PROMPT_TMPL
 
-from data_pipeline_aug.gen_preference_pairs import cartesian_product
+from evaluation.gen_preference_pairs import cartesian_product
 
 def collect_preference_pairs_from_tree(tree: MultiAgentTree, threshold=0.5, verbose=True):
     """
@@ -121,7 +121,7 @@ def main(verbose: bool = False):
     datasetV, datasetR = [], []
     test_case_names = []
     for tree in forest.trees:
-        verifier_pairs, refiner_pairs = collect_preference_pairs_from_tree(tree, threshold, verbose=False)
+        verifier_pairs, refiner_pairs = collect_preference_pairs_from_tree(tree, threshold, verbose=True)
         datasetV += verifier_pairs
         datasetR += refiner_pairs
         if len(verifier_pairs)==0 and len(refiner_pairs)==0:
@@ -161,4 +161,4 @@ def main(verbose: bool = False):
     
 
 if __name__ == '__main__':
-    main()
+    main(verbose=True)
